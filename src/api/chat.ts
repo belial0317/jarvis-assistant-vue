@@ -55,6 +55,23 @@ export interface ChatMessageSendDTO {
   currentRoute?: string;
   /** 当前页面内容上下文（DOM 提取后的文本） */
   pageContext?: string;
+  /**
+   * PP4 结构化页面快照（内容 + 时效元信息），后端优先于 pageContext 消费。
+   * 双写期与 pageContext 并存，后端未升级时忽略未知字段。
+   */
+  pageSnapshot?: PageSnapshotPayload;
+}
+
+/** PP4：随消息上行的页面快照（PageSnapshot 的传输形态，剔除本地 insight） */
+export interface PageSnapshotPayload {
+  epoch: { configId: string; configVersion: number };
+  routePath: string;
+  /** 采集完成时间（Unix 毫秒） */
+  capturedAt: number;
+  /** 采集后 DOM 变异数（时效信号） */
+  mutationCount: number;
+  stale: boolean;
+  text: string;
 }
 
 /** 创建/更新会话请求体 */
@@ -159,9 +176,10 @@ export function sendMessage(sessionId: string, dto: ChatMessageSendDTO) {
  * 后端：POST /chat/sessions/{sessionId}/stream，响应 text/event-stream。
  * 每个事件 data 为 StreamChunk JSON，与前端 types.ts 的 StreamChunk 类型对齐。
  *
- * 实现说明：postSSE 把 fetch ReadableStream 的原始 chunk 推给 onMessage，
- * 不做 SSE 协议解析（event:/data: 行分割）。本方法在客户端维护 buffer，
- * 按 \n\n 分割事件，再提取 data: 行 parse 为 StreamChunk。
+ * 实现说明：
+ * - client.ts 已经按 text/event-stream 协议解析（按 `\n\n` 切分 + 提取 `data:` 字段），
+ *   所以本方法拿到的 onMessage 回调参数是 data 字段纯文本（不含 `data:` 前缀）。
+ * - 因此这里直接 `JSON.parse(content)` 即可得到 StreamChunk。
  *
  * @param sessionId 会话 ID（后端雪花 ID 字符串）
  * @param dto       消息体（role/content/agentId）
@@ -175,7 +193,6 @@ export function streamMessage(
   signal?: AbortSignal,
 ): Promise<void> {
   const streamUrl = path(ChatApi.STREAM, { sessionId });
-  let buffer = '';
   return aiRequestClient.postSSE(
     streamUrl,
     { ...dto, role: dto.role ?? 'user' },
@@ -186,22 +203,17 @@ export function streamMessage(
       // 后端因无法解析 application/x-www-form-urlencoded 报 415。
       headers: { 'Content-Type': 'application/json' },
       onMessage: (content: string) => {
-        buffer += content;
-        // 按空行分割 SSE 事件
-        let idx: number;
-        while ((idx = buffer.indexOf('\n\n')) !== -1) {
-          const raw = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 2);
-          // 解析事件内的 data: 行（SseEmitter 默认输出 data:JSON）
-          for (const line of raw.split('\n')) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('data:')) {
-              try {
-                onChunk(JSON.parse(trimmed.slice(5).trim()));
-              } catch {
-                // 忽略半包/解析失败
-              }
-            }
+        // client.ts 已经剥离了 `data:` 前缀，content 即 data 字段纯文本
+        const trimmed = content.trim();
+        if (!trimmed) return;
+        // `[DONE]` 等心跳哨兵：忽略
+        if (trimmed === '[DONE]') return;
+        try {
+          onChunk(JSON.parse(trimmed));
+        } catch {
+          // 忽略半包 / 解析失败（debug 用，生产可降级为 console.warn）
+          if (typeof console !== 'undefined') {
+            console.warn('[streamMessage] failed to parse SSE chunk:', trimmed);
           }
         }
       },
@@ -215,10 +227,19 @@ export function stopGenerate(sessionId: string) {
 }
 
 /** 页面上下文一句话摘要（同步调用 LLM） */
-export function summarizeContext(currentRoute: string, pageContext: string) {
+/**
+ * 页面上下文一句话摘要（PP3：可携带 contentHash 启用后端 Redis 去重，
+ * 同一内容重复调用 0 次 LLM；不携带时行为与旧版一致）
+ */
+export function summarizeContext(
+  currentRoute: string,
+  pageContext: string,
+  contentHash?: string,
+) {
   return aiRequestClient.post<string>(ChatApi.SUMMARIZE_CONTEXT, {
     currentRoute,
     pageContext,
+    ...(contentHash ? { contentHash } : {}),
   });
 }
 

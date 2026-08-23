@@ -13,7 +13,8 @@ defineOptions({ name: 'AiChatInputArea' });
 const props = defineProps<{
   loading?: boolean;
   context?: ContextItem[];
-  modelName?: string;
+  /** 当前选中的模型 ID（与 modelOptions 的 value 对齐），空串表示未选中 */
+  modelId?: string;
   modelOptions?: Array<{ label: string; value: string }>;
 }>();
 
@@ -22,7 +23,7 @@ const emit = defineEmits<{
   stop: [];
   retry: [];
   'update:context': [ContextItem[]];
-  'update:modelName': [string];
+  'update:modelId': [string];
 }>();
 
 const SendIcon = createIconifyIcon('lucide:arrow-up');
@@ -81,6 +82,20 @@ const slashItems = computed(() => slashCommands.value);
 const slashIndex = ref(0);
 
 const canSend = computed(() => text.value.trim().length > 0 && !props.loading);
+
+/**
+ * 模型下拉框双向绑定的本地状态。
+ * - props.modelId 为空（首次渲染 / 尚未加载模型列表）时，默认取 modelOptions[0]
+ * - 用户手动切换时通过 emit('update:modelId') 通知父组件同步
+ */
+const selectedModelId = computed({
+  get(): string {
+    return props.modelId || props.modelOptions?.[0]?.value || '';
+  },
+  set(v: string) {
+    emit('update:modelId', v);
+  },
+});
 
 function autoResize() {
   const el = textareaRef.value;
@@ -451,14 +466,8 @@ defineExpose({ focus: () => textareaRef.value?.focus() });
         <div class="flex flex-shrink-0 items-center gap-1.5">
           <select
             v-if="modelOptions && modelOptions.length"
-            :value="modelName"
+            v-model="selectedModelId"
             class="h-7 cursor-pointer rounded-md border border-border bg-background px-2 text-[11px] outline-none transition-colors hover:border-primary/40"
-            @change="
-              emit(
-                'update:modelName',
-                ($event.target as HTMLSelectElement).value,
-              )
-            "
           >
             <option v-for="m in modelOptions" :key="m.value" :value="m.value">
               {{ m.label }}

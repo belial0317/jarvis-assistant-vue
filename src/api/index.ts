@@ -5,5 +5,7 @@ export * from './endpoints';
 export * from './health';
 export * from './knowledge';
 export * from './mcp';
+export * from './nl2sql';
+export * from './perception';
 export * from './provider';
 export * from './skill';

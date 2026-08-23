@@ -35,7 +35,7 @@ export default defineConfig({
     stylesEmitPlugin(),
     dts({
       include: ['src/**/*.ts', 'src/**/*.vue'],
-      exclude: ['src/**/*.test.ts'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
       cleanVueFileName: true,
       insertTypesEntry: true,
     }),

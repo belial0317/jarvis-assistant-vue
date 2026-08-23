@@ -15,7 +15,10 @@
     "ant-design-vue"
   ],
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -25,16 +28,24 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./style.css": "./dist/style.css",
+    "./style.css": "./dist/index.css",
     "./design-tokens.css": "./dist/styles/design-tokens.css",
     "./utilities.css": "./dist/styles/utilities.css",
     "./constants": {
       "types": "./dist/constants.d.ts",
       "import": "./dist/constants.js"
     },
+    "./modules/chat": {
+      "types": "./dist/modules/chat/index.d.ts",
+      "import": "./dist/modules/chat/index.js"
+    },
+    "./modules/chat/input-area": {
+      "types": "./dist/modules/chat/input-area.d.ts",
+      "import": "./dist/modules/chat/input-area.js"
+    },
     "./modules/*": {
-      "types": "./dist/modules/*/index.d.ts",
-      "import": "./dist/modules/*/index.js"
+      "types": "./dist/modules/*.d.ts",
+      "import": "./dist/modules/*.js"
     }
   },
   "sideEffects": [
@@ -45,7 +56,16 @@
     "dev": "vite build --watch",
     "build": "vue-tsc --noEmit && vite build",
     "type-check": "vue-tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint . --ext .ts,.vue",
+    "lint:fix": "eslint . --ext .ts,.vue --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write \"src/**/*.{ts,vue,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,vue,css}\"",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "peerDependencies": {
     "@iconify/vue": "^4.1.0 || ^5.0.0",
@@ -56,9 +76,11 @@
     "@iconify/vue": "^5.0.1",
     "@vitejs/plugin-vue": "^6.0.8",
     "ant-design-vue": "^4.2.6",
+    "jsdom": "^26.1.0",
     "typescript": "^5.5.0",
     "vite": "^5.4.0 || ^8.0.0",
     "vite-plugin-dts": "^4.0.0",
+    "vitest": "^3.2.4",
     "vue": "^3.5.40",
     "vue-tsc": "^3.0.0"
   },

@@ -51,18 +51,31 @@ const snapshot: Ref<BackendHealthSnapshot> = ref({
 let pendingCheck: Promise<BackendHealthSnapshot> | null = null;
 
 /**
- * 将 axios 异常归类为可读 reason
+ * 将 fetch / 自定义适配器抛出的异常归类为可读 reason。
+ *
+ * 内建 fetch 错误特征：
+ * - 网络不可达：TypeError: Failed to fetch（error.name === 'TypeError'）
+ * - 主动中断：AbortError
+ * - HTTP 层错误：doRequest/doStream 抛出的 Error，message 以 "HTTP " 开头
  */
 function classifyError(error: any): BackendHealthSnapshot['reason'] {
   if (!error) return 'unknown';
-  // axios 设置了 error.code === 'ECONNABORTED' 或 message 含 timeout
-  if (error?.code === 'ECONNABORTED' || error?.message?.includes?.('timeout')) {
+  const name = error?.name;
+  const msg = typeof error?.message === 'string' ? error.message : '';
+  // 主动中断（超时/取消）
+  if (name === 'AbortError' || msg.includes('timeout')) {
     return 'timeout';
   }
-  if (error?.message === 'Network Error' || error?.code === 'ERR_NETWORK') {
+  // 网络层失败（fetch rejected）
+  if (name === 'TypeError' || msg.includes('fetch') || msg.includes('Failed to fetch')) {
     return 'network';
   }
-  if (typeof error?.response?.status === 'number') {
+  // HTTP 状态码错误
+  if (msg.startsWith('HTTP ')) {
+    return 'http';
+  }
+  // 兼容自定义 adapter 抛出的带 status 的错误
+  if (typeof error?.status === 'number' || typeof error?.response?.status === 'number') {
     return 'http';
   }
   return 'unknown';

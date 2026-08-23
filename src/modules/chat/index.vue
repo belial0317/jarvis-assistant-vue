@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { createIconifyIcon } from '../../providers/icons';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
 import type {
   ChatMessage,
@@ -33,7 +33,10 @@ import {
   loadPerceptionConfigs,
   type PageInsight,
 } from '../../utils/page-context';
+import { summaryHash } from '../../perception/hash';
 import { useBackendHealth } from '../../composables/use-backend-health';
+import { usePerception } from '../../composables/use-perception';
+import type { PerceptionStage } from '../../perception/manager';
 import StatusBar from '../../components/status-bar.vue';
 import InputArea from './input-area.vue';
 import { useAiAssistantConfig } from '../../providers';
@@ -64,13 +67,44 @@ const showHistory = ref(false);
 const loadingSessions = ref(false);
 
 // ===== 页面感知摘要（空会话时展示，LLM 一句话总结）=====
-const pageInsight = ref<PageInsight | null>(null);
-const insightLoading = ref(false);
-const insightSummary = ref('');
-const perceptionStage = ref<'done' | 'extracting' | 'failed' | 'idle' | 'perceiving'>('idle');
+// PP4：感知管线接管 DOM 采集；洞察来自快照（captured 事件驱动，实时于旧轮询）
+const perception = usePerception();
 const hasMessages = computed(
   () => (activeSession.value?.messages.length ?? 0) > 0,
 );
+const pageInsight = computed<PageInsight | null>(() =>
+  hasMessages.value ? null : perception.insight.value,
+);
+const insightLoading = ref(false);
+const insightSummary = ref('');
+
+/**
+ * 感知阶段：内核状态映射 + 摘要流程覆盖。
+ * - DOM 采集部分（idle/extracting/done/failed）由 kernel 状态机接管；
+ * - 摘要生成中（perceiving）由 refreshPageInsight 置位，不被内核覆盖。
+ */
+type PerceptionStageUi = 'done' | 'extracting' | 'failed' | 'idle' | 'perceiving';
+const perceptionStage = ref<PerceptionStageUi>('idle');
+
+function mapKernelStage(stage: PerceptionStage): PerceptionStageUi {
+  switch (stage) {
+    case 'observing':
+      return 'extracting';
+    case 'ready':
+    case 'stale':
+      return 'done';
+    case 'degraded':
+    case 'failed':
+      return 'failed';
+    default:
+      return 'idle';
+  }
+}
+
+watch(perception.stage, (stage) => {
+  if (insightLoading.value) return; // 摘要进行中保持 perceiving
+  perceptionStage.value = mapKernelStage(stage);
+});
 
 // 用 LLM 感知摘要替代会话标题显示（有摘要时优先）
 const displayTitle = computed(() => {
@@ -89,17 +123,9 @@ let lastSummaryToken = 0;
 const health = useBackendHealth();
 
 async function refreshPageInsight() {
-  // 空会话才展示 DOM 统计 + hints 面板
-  if (hasMessages.value) {
-    pageInsight.value = null;
-    perceptionStage.value = 'perceiving';
-  } else {
-    perceptionStage.value = 'extracting';
-    pageInsight.value = buildPageInsight(
-      config.route?.getRoute().path,
-      (config.route?.getRoute().title as string) || undefined,
-    );
-  }
+  // PP4：洞察已由感知管线驱动（pageInsight computed），此处只负责标题摘要
+  // 先同步刷新一次快照：路由刚切换时确保拿到当前页面内容而非上一页 last-good
+  perception.refresh();
 
   // 后端未连通：跳过 summarizeContext 调用，避免 4–5 个并发错误 toast
   if (health.value.state !== 'connected') {
@@ -110,15 +136,21 @@ async function refreshPageInsight() {
   }
 
   // 不管有无消息，都生成标题摘要（用于替换会话标题）
-  let pageContext: string;
-  try {
-    pageContext = capturePageContext(config.route?.getRoute().path);
-  } catch {
-    pageContext = '';
-  }
+  // 快照文本优先；无快照/为空时回退 capturePageContext，再退路由信息
+  const route = config.route?.getRoute();
+  const pageContext =
+    perception.snapshot.value?.text ||
+    (() => {
+      try {
+        return capturePageContext(route?.path);
+      } catch {
+        return '';
+      }
+    })();
   // pageContext 为空时仍尝试请求后端（传路由信息作为 fallback），
   // 避免 capturePageContext 返回空导致 summarizeContext 永不被调用
-  const contextForSummary = pageContext || `路由: ${config.route?.getRoute().path}\n页面: ${config.route?.getRoute().title ?? '未知'}`;
+  const contextForSummary = pageContext || `路由: ${route?.path}\n页面: ${route?.title ?? '未知'}`;
+  const routeJson = JSON.stringify({ path: route?.path, title: route?.title });
 
   const token = ++lastSummaryToken;
   insightLoading.value = true;
@@ -128,8 +160,10 @@ async function refreshPageInsight() {
     // 兜底：15s 超时防止 axios 拦截器异常导致 promise 永久 pending
     const summary = await Promise.race([
       summarizeContext(
-        JSON.stringify({ path: config.route?.getRoute().path, title: config.route?.getRoute().title }),
+        routeJson,
         contextForSummary,
+        // PP3：内容哈希 → 后端 Redis 去重（TTL 24h），同页面重复导航 0 次 LLM
+        summaryHash(routeJson, contextForSummary),
       ),
       new Promise<string>((_, reject) =>
         setTimeout(() => reject(new Error('summarizeContext timeout after 15s')), 15000),
@@ -155,6 +189,7 @@ watch(
 
 // ===== 模型选择（真实 Provider API） =====
 // 后端 Provider 为平台级共享（不参与多租户过滤），加载已启用供应商的模型
+// 默认模型（isDefault=true）排在第一位，供 input-area 下拉框默认选中
 const modelOptions = ref<Array<{ label: string; value: string }>>([]);
 
 async function loadModelOptions() {
@@ -166,6 +201,20 @@ async function loadModelOptions() {
         list.push({ label: m.displayName, value: m.id });
       }
     }
+    // 排序：isDefault=true 排第一（默认选中），其他按原顺序
+    list.sort((a, b) => {
+      const aDef = providers
+        .flatMap((p) => p.models ?? [])
+        .find((m) => m.id === a.value)?.isDefault
+        ? -1
+        : 0;
+      const bDef = providers
+        .flatMap((p) => p.models ?? [])
+        .find((m) => m.id === b.value)?.isDefault
+        ? -1
+        : 0;
+      return aDef - bDef;
+    });
     modelOptions.value = list;
   } catch {
     // 加载失败：保留空列表，用户仍可发消息（后端用默认模型）
@@ -412,7 +461,7 @@ function scrollToBottom(smooth = false) {
 }
 
 async function onSend(text: string) {
-  pageInsight.value = null;
+  // PP4：pageInsight 为 computed（有消息自动隐藏），无需手动清空
   insightSummary.value = '';
   perceptionStage.value = 'idle';
   let session = activeSession.value;
@@ -448,6 +497,9 @@ async function onSend(text: string) {
   scrollToBottom();
 
   loading.value = true;
+  // 防御性中止上一轮仍在运行的请求，避免并发 SSE 流互相干扰
+  // （vite proxy 对并发 SSE 长连接处理不完善，可能导致请求被丢弃）
+  abortController?.abort();
   abortController = new AbortController();
 
   try {
@@ -456,11 +508,32 @@ async function onSend(text: string) {
       name: String(config.route?.getRoute().name ?? ''),
       title: (config.route?.getRoute().title as string) ?? '',
     });
-    const pageContext = capturePageContext(config.route?.getRoute().path);
+    // PP4：发送前同步重采集（stale 时 DOM 同步重读），快照 + 纯文本双写。
+    // 后端优先消费 pageSnapshot（含时效元信息），未升级时忽略并回退 pageContext。
+    const snapshot = perception.refresh();
+    const pageContext =
+      snapshot?.text ?? capturePageContext(config.route?.getRoute().path);
 
     await streamMessage(
       session.id,
-      { agentId: session.agentId, content: text, currentRoute, pageContext },
+      {
+        agentId: session.agentId,
+        content: text,
+        currentRoute,
+        pageContext,
+        ...(snapshot
+          ? {
+              pageSnapshot: {
+                epoch: snapshot.epoch,
+                routePath: snapshot.routePath,
+                capturedAt: snapshot.capturedAt,
+                mutationCount: snapshot.mutationCount,
+                stale: snapshot.stale,
+                text: snapshot.text,
+              },
+            }
+          : {}),
+      },
       (chunk: StreamChunk) => {
         switch (chunk.type) {
           case 'reasoning': {
@@ -709,6 +782,9 @@ onMounted(async () => {
     scrollToBottom();
   }
   refreshPageInsight();
+});
+onUnmounted(() => {
+  abortController?.abort();
 });
 </script>
 
@@ -983,13 +1059,13 @@ onMounted(async () => {
       <InputArea
         :loading="loading"
         :context="context"
-        :model-name="activeSession?.modelId"
+        :model-id="activeSession?.modelId"
         :model-options="modelOptions"
         @send="onSend"
         @stop="onStop"
         @retry="onRetry"
         @update:context="onContextChange"
-        @update:model-name="onModelChange"
+        @update:model-id="onModelChange"
       />
 
       <!-- 状态栏 -->

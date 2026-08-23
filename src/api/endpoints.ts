@@ -75,6 +75,8 @@ export enum KnowledgeApi {
 
 export enum PerceptionApi {
   LIST = '/perception/configs',
+  /** PP3 版本化清单（If-None-Match / 304 / ETag） */
+  MANIFEST = '/perception/configs/manifest',
   SAVE = '/perception/configs',
   DELETE = '/perception/configs/{id}',
 }

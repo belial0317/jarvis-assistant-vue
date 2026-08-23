@@ -523,6 +523,10 @@
  * 21. 组件作用域（关键组件 hook）
  * ===================================================== */
 
+.ai-assistant-drawer .ant-drawer-content-wrapper {
+  /* 抽屉最外层容器：未设背景会导致 antd 默认透明、露出底层页面 */
+  background-color: hsl(var(--background));
+}
 .ai-assistant-drawer .ant-drawer-content {
   border-left: 1px solid hsl(var(--border));
   border-radius: 0;

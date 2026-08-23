@@ -66,7 +66,7 @@ export function listDocuments(kbId: string) {
   );
 }
 
-export function uploadDocument(kbId: string, file: File) {
+export function uploadDocument(kbId: string, file: File, signal?: AbortSignal) {
   const formData = new FormData();
   formData.append('file', file);
   return aiRequestClient.post<string>(
@@ -75,6 +75,7 @@ export function uploadDocument(kbId: string, file: File) {
     {
       // 覆盖默认的 application/json，让浏览器自动设置 multipart/form-data + boundary
       headers: { 'Content-Type': 'multipart/form-data' },
+      signal,
     },
   );
 }
