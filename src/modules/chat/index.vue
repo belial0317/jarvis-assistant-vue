@@ -399,7 +399,8 @@ async function startNewSession() {
     scrollToBottom();
     refreshPageInsight();
   } catch {
-    // 创建失败：保留在当前会话
+    // 创建失败：保留在当前会话。失败原因已由 aiRequestClient 的 showError
+    // （宿主注入的 onError 回调）向用户展示，此处不静默吞掉错误信息。
   }
 }
 

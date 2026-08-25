@@ -5,8 +5,12 @@ import { message } from 'ant-design-vue';
 import { computed, onMounted, reactive, ref } from 'vue';
 
 import {
+  getAiApiKey,
   getAiBaseUrl,
+  maskAiApiKey,
+  resetAiApiKey,
   resetAiBaseUrl,
+  setAiApiKey,
   setAiBaseUrl,
 } from '../api/client';
 import {
@@ -61,6 +65,41 @@ const backendStatus = computed<'idle' | 'ok' | 'error'>(() => {
 
 function loadBackendUrl() {
   backendUrlInput.value = getAiBaseUrl();
+  loadApiKey();
+}
+
+// ===== API Key 配置 =====
+const apiKeyInput = ref('');
+/** 已配置 key 的脱敏展示（响应式：保存/清除后刷新） */
+const savedApiKeyMasked = ref('');
+/** 明文查看开关：默认密文，点眼睛图标切换 */
+const apiKeyVisible = ref(false);
+const EyeIcon = createIconifyIcon('lucide:eye');
+const EyeOffIcon = createIconifyIcon('lucide:eye-off');
+
+function loadApiKey() {
+  const saved = getAiApiKey();
+  savedApiKeyMasked.value = saved ? maskAiApiKey(saved) : '';
+  // 已配置时输入框回填完整 key（密文呈现），可点眼睛查看明文；未配置则留空待输入
+  apiKeyInput.value = saved ?? '';
+  apiKeyVisible.value = false;
+}
+
+function saveApiKey() {
+  const key = apiKeyInput.value.trim();
+  if (!key) {
+    message.error('请输入 API Key（sk-jarvis- 开头，由门户平台分配）');
+    return;
+  }
+  setAiApiKey(key);
+  loadApiKey();
+  message.success(`API Key 已保存：${maskAiApiKey(key)}`);
+}
+
+function handleClearApiKey() {
+  resetAiApiKey();
+  loadApiKey();
+  message.success('已清除本地 API Key（回落到宿主默认凭据）');
 }
 
 /**
@@ -226,6 +265,51 @@ onMounted(loadBackendUrl);
             <div>· 默认 <code class="rounded bg-muted px-1 text-[10px]">/ai-api</code>：经 vite proxy / 网关转发到后端</div>
             <div>· 自定义地址（如 <code class="rounded bg-muted px-1 text-[10px]">http://host:port</code>）：直连后端，绕过代理</div>
             <div>· 切换后所有 AI 请求（含流式 SSE）立即生效，无需刷新</div>
+          </div>
+
+          <!-- API Key 配置 -->
+          <div class="border-t border-border pt-2">
+            <label class="mb-1 block text-[11px] text-muted-foreground">
+              API Key
+              <span v-if="!savedApiKeyMasked" class="ml-1 text-amber-600">未配置（使用宿主默认凭据）</span>
+            </label>
+            <div class="flex items-center gap-1.5">
+              <input
+                v-model="apiKeyInput"
+                :type="apiKeyVisible ? 'text' : 'password'"
+                autocomplete="off"
+                class="h-7 flex-1 rounded-md border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
+                :placeholder="savedApiKeyMasked ? '已配置（点击右侧眼睛图标查看）' : '输入 sk-jarvis- 开头的 API Key'"
+              />
+              <button
+                v-if="savedApiKeyMasked"
+                class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                :title="apiKeyVisible ? '隐藏明文' : '查看明文'"
+                @click="apiKeyVisible = !apiKeyVisible"
+              >
+                <component :is="apiKeyVisible ? EyeOffIcon : EyeIcon" class="h-3.5 w-3.5" />
+              </button>
+              <button
+                class="h-7 flex-shrink-0 rounded-md bg-primary px-2.5 text-[11px] text-primary-foreground hover:bg-primary/90"
+                @click="saveApiKey"
+              >
+                保存
+              </button>
+              <button
+                v-if="savedApiKeyMasked"
+                class="h-7 flex-shrink-0 rounded-md border border-border px-2.5 text-[11px] text-muted-foreground hover:bg-accent"
+                title="清除本地保存的 API Key"
+                @click="handleClearApiKey"
+              >
+                清除
+              </button>
+            </div>
+            <div class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+              · Key 仅保存在本浏览器（localStorage），不会上传；由门户运营平台分配
+              <template v-if="savedApiKeyMasked">
+                <br />· 修改后点"保存"覆盖；输入框默认密文呈现，点眼睛图标查看明文
+              </template>
+            </div>
           </div>
         </div>
       </div>

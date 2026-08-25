@@ -30,23 +30,7 @@
     },
     "./style.css": "./dist/index.css",
     "./design-tokens.css": "./dist/styles/design-tokens.css",
-    "./utilities.css": "./dist/styles/utilities.css",
-    "./constants": {
-      "types": "./dist/constants.d.ts",
-      "import": "./dist/constants.js"
-    },
-    "./modules/chat": {
-      "types": "./dist/modules/chat/index.d.ts",
-      "import": "./dist/modules/chat/index.js"
-    },
-    "./modules/chat/input-area": {
-      "types": "./dist/modules/chat/input-area.d.ts",
-      "import": "./dist/modules/chat/input-area.js"
-    },
-    "./modules/*": {
-      "types": "./dist/modules/*.d.ts",
-      "import": "./dist/modules/*.js"
-    }
+    "./utilities.css": "./dist/styles/utilities.css"
   },
   "sideEffects": [
     "**/*.vue",

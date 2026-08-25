@@ -33,6 +33,39 @@ export function resetAiBaseUrl(): void {
   localStorage.removeItem(AI_BASE_URL_STORAGE_KEY);
 }
 
+// ===== API Key 动态配置（localStorage 持久化）=====
+
+const AI_API_KEY_STORAGE_KEY = 'ai_assistant_api_key';
+
+/** 读取用户在设置页配置的 API Key（未配置返回 null） */
+export function getAiApiKey(): null | string {
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem(AI_API_KEY_STORAGE_KEY);
+}
+
+/** 保存 API Key（空字符串 / 非字符串视为清除） */
+export function setAiApiKey(key: string): void {
+  if (typeof localStorage === 'undefined') return;
+  const trimmed = key.trim();
+  if (trimmed) {
+    localStorage.setItem(AI_API_KEY_STORAGE_KEY, trimmed);
+  } else {
+    localStorage.removeItem(AI_API_KEY_STORAGE_KEY);
+  }
+}
+
+/** 清除已配置的 API Key（回落到宿主注入的默认凭据） */
+export function resetAiApiKey(): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(AI_API_KEY_STORAGE_KEY);
+}
+
+/** API Key 脱敏展示（保留 sk-jarvis 前缀可辨识，长度不足则全掩码） */
+export function maskAiApiKey(key: string): string {
+  if (key.length <= 11) return '***';
+  return `${key.slice(0, 11)}***`;
+}
+
 // ===== 请求配置类型 =====
 
 interface AiRequestConfig {
@@ -83,8 +116,10 @@ function buildHeaders(custom?: Record<string, string>): Record<string, string> {
     headers.Authorization = authHeader;
   }
   headers['Accept-Language'] = aiConfig.locale?.getLocale() ?? 'zh-CN';
-  if (!headers['X-Tenant-Id']) {
-    headers['X-Tenant-Id'] = '0';
+  // 租户头仅在宿主显式提供时发送；服务端对已认证请求以凭证内租户为准（防伪造）
+  const tenantId = aiConfig.auth?.getTenantId?.();
+  if (tenantId !== null && tenantId !== undefined && !headers['X-Tenant-Id']) {
+    headers['X-Tenant-Id'] = String(tenantId);
   }
   return headers;
 }

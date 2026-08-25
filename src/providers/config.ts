@@ -52,4 +52,13 @@ export interface AiAssistantConfig {
    * 错误通知回调。不提供时使用 ant-design-vue message.error。
    */
   onError?: (message: string) => void;
+
+  /**
+   * 插件市场配置。
+   * catalogURL：门户运营平台的插件目录 API 地址（跨系统只读）。
+   * 不提供或不可达时，市场模块降级为"仅显示已安装插件"。
+   */
+  market?: {
+    catalogURL?: string;
+  };
 }

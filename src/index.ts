@@ -39,6 +39,9 @@ export type {
 // ===== 图标工具 =====
 export { createIconifyIcon } from './providers/icons';
 
+// ===== API 层（P0 修复：原 ./modules/* ./api/* 子路径产物缺失，统一并入根入口导出）=====
+export * from './api';
+
 // ===== 业务类型 =====
 export type {
   AIModuleType,
