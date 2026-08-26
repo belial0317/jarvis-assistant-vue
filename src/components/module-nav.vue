@@ -16,7 +16,6 @@ const SkillIcon = createIconifyIcon('lucide:wand-sparkles');
 const AgentIcon = createIconifyIcon('lucide:bot');
 const McpIcon = createIconifyIcon('lucide:plug');
 const KnowledgeIcon = createIconifyIcon('lucide:book-open');
-const MarketIcon = createIconifyIcon('lucide:store');
 const ProviderIcon = createIconifyIcon('lucide:server');
 const AuditIcon = createIconifyIcon('lucide:scroll-text');
 const PerceptionIcon = createIconifyIcon('lucide:radar');
@@ -27,7 +26,6 @@ const iconMap: Record<AIModuleType, any> = {
   audit: AuditIcon,
   chat: ChatIcon,
   knowledge: KnowledgeIcon,
-  market: MarketIcon,
   mcp: McpIcon,
   perception: PerceptionIcon,
   provider: ProviderIcon,
@@ -41,7 +39,9 @@ const ALL_MODULES: AIModuleMeta[] = [
   { key: 'agent', label: 'Agents 管理', icon: '', description: '智能体角色', ready: true },
   { key: 'mcp', label: 'MCP 管理', icon: '', description: '模型上下文协议', ready: true },
   { key: 'knowledge', label: '知识库', icon: '', description: '文档与检索', ready: true },
-  { key: 'market', label: '插件市场', icon: '', description: '发现与安装第三方插件', ready: true },
+  // 插件市场本期取消（2026-08-27 用户决策，对齐 tasks-2608-2600-23 插件化搁置）；
+  // market 模块代码保留为搁置状态，恢复时加回下面一行即可：
+  // { key: 'market', label: '插件市场', icon: '', description: '发现与安装第三方插件', ready: true },
   { key: 'perception', label: '感知配置', icon: '', description: '页面感知规则', ready: true },
   { key: 'provider', label: '供应商管理', icon: '', description: '模型供应商', ready: true },
   { key: 'audit', label: 'NL2SQL 审计', icon: '', description: '查询历史与反馈', ready: true, system: true },

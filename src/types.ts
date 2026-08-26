@@ -9,7 +9,6 @@
 export type AIModuleType =
   | 'audit'
   | 'chat'
-  | 'market'
   | 'skill'
   | 'agent'
   | 'mcp'

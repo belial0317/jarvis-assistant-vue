@@ -9,7 +9,6 @@ import ModuleNav from './components/module-nav.vue';
 import AgentCompact from './modules/agent-compact.vue';
 import ChatWorkbench from './modules/chat/index.vue';
 import KnowledgeCompact from './modules/knowledge-compact.vue';
-import MarketCompact from './modules/market-compact.vue';
 import McpCompact from './modules/mcp-compact.vue';
 import Nl2sqlAuditCompact from './modules/nl2sql-audit-compact.vue';
 import PerceptionCompact from './modules/perception-compact.vue';
@@ -153,7 +152,6 @@ watch(
         />
         <McpCompact v-else-if="active === 'mcp'" />
         <KnowledgeCompact v-else-if="active === 'knowledge'" />
-        <MarketCompact v-else-if="active === 'market'" />
         <ProviderCompact v-else-if="active === 'provider'" />
         <Nl2sqlAuditCompact v-else-if="active === 'audit'" />
         <PerceptionCompact v-else-if="active === 'perception'" />
