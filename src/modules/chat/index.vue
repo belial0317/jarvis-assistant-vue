@@ -766,16 +766,20 @@ function onContextChange(items: ContextItem[]) {
 
 // ===== 初始化 =====
 onMounted(async () => {
-  // 后端未连通：跳过全部 API 调用，由顶部 banner 提示用户
+  // 感知配置加载与后端健康解耦（P1-3 修复：disconnected 时整段 return 会导致
+  // 后端恢复后配置库恒空；此处无条件尝试，失败由 loadPerceptionConfigs 内部静默）
+  loadPerceptionConfigs().catch(() => {
+    // 后端不可达时保留现有配置库（可能为空），健康恢复后 manifest 机制自动同步
+  });
+  // 后端未连通：跳过业务 API 调用，由顶部 banner 提示用户
   if (health.value.state === 'disconnected') {
     return;
   }
-  // 并行加载模型选项 + Agent 列表 + 会话列表 + 感知配置
+  // 并行加载模型选项 + Agent 列表 + 会话列表（感知配置已先行加载）
   await Promise.all([
     loadModelOptions(),
     loadAgents(),
     loadSessions(),
-    loadPerceptionConfigs(),
   ]);
   if (sessions.value.length === 0) {
     await startNewSession();

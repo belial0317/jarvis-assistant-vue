@@ -69,12 +69,70 @@ export async function fetchMarketCatalog(): Promise<MarketPlugin[] | null> {
   }
 }
 
-/** 已安装清单 = 本系统 MCP server 中 market- 前缀的记录 */
-export async function listInstalledPlugins(): Promise<McpServer[]> {
-  const servers = await aiRequestClient.get<McpServer[]>(McpApi.LIST, {
-    params: { pageSize: 200 },
-  });
-  return servers.filter((s) => s.name?.startsWith('market-'));
+/** 已安装清单（后端聚合：目录信息 ⋈ mcp 运行状态） */
+export interface InstalledPlugin {
+  serverId: string;
+  pluginCode: string;
+  name?: string;
+  icon?: string;
+  description?: string;
+  category?: string;
+  provider?: string;
+  ui?: MarketPluginUi;
+  status?: string;
+  enabled?: boolean;
+  lastError?: string;
+}
+
+/** UI 插件页面声明（schema-page，声明式无代码） */
+export interface MarketPluginUi {
+  type: 'schema-page';
+  page: SchemaPage;
+}
+
+export interface SchemaPage {
+  title?: string;
+  sections: SchemaSection[];
+}
+
+export type SchemaSection =
+  | {
+      type: 'stats';
+      cards: Array<{ label: string; unit?: string; tool: string; field: string }>;
+    }
+  | {
+      type: 'list';
+      title?: string;
+      tool: string;
+      columns: Array<{ key: string; label: string }>;
+      dataField?: string;
+    }
+  | {
+      type: 'form';
+      title?: string;
+      fields: Array<{
+        key: string;
+        label: string;
+        type: 'date' | 'number' | 'select' | 'text';
+        options?: string[];
+      }>;
+      submit: { label: string; tool: string; resultField?: string; asTable?: boolean };
+    };
+
+export async function listInstalledPlugins(): Promise<InstalledPlugin[]> {
+  return aiRequestClient.get<InstalledPlugin[]>('/market/installed');
+}
+
+/** UI 页面数据源：直调已安装插件的工具（渲染器限定只能调本插件清单内工具） */
+export function invokeTool(
+  serverId: string,
+  toolName: string,
+  args?: Record<string, unknown>,
+): Promise<string> {
+  return aiRequestClient.post<string>(
+    path(McpApi.INVOKE, { id: serverId, toolName }),
+    args ?? {},
+  );
 }
 
 /** 目录项 → 本系统注册 DTO（映射约定见文件头） */

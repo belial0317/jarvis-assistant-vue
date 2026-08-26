@@ -120,9 +120,12 @@ export class PerceptionSession {
 
   /** DOM 变异通知（dom-collector 调用）：置 stale 并防抖重采集 */
   markMutation(): void {
-    // 防悬挂（对标异步迭代器产出前查 epoch）：已销毁/未启动的会话忽略变异
-    if (this._state === 'disposed' || this._state === 'idle') return;
+    // 防悬挂（对标异步迭代器产出前查 epoch）：已销毁会话忽略变异。
+    // idle 态（会话已建未首采，P1-2 修复期）仅累计计数不置 stale——
+    // 首采 capture 会全量读 DOM，此前变异只影响时效信号而非内容正确性
+    if (this._state === 'disposed') return;
     this._mutationCount++;
+    if (this._state === 'idle') return;
     if (
       this._state === 'ready' ||
       this._state === 'stale' ||

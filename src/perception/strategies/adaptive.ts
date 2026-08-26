@@ -6,6 +6,8 @@
 const THRESHOLD_FULL = 1500;
 const THRESHOLD_COMPRESSED = 3500;
 const TEXT_BUDGET_IN_SUMMARY = 1500;
+/** 摘要阶段表格块总预算（v1 P1-1：此前表格块全量保留，多表页面输出不可控） */
+const TABLE_BUDGET_IN_SUMMARY = 2500;
 
 export function applyAdaptiveStrategy(content: string): string {
   const len = content.length;
@@ -67,10 +69,35 @@ function summarize(content: string): string {
     }
   }
 
-  kept.push(...tableBlocks);
+  const meta: string[] = [];
+
+  // 表格块总预算：超预算时逐表截断（保留表头行，行数据截断并标注）
+  let tableBudget = TABLE_BUDGET_IN_SUMMARY;
+  let tableTruncated = 0;
+  for (const block of tableBlocks) {
+    if (tableBudget <= 0) {
+      tableTruncated += 1;
+      continue;
+    }
+    if (block.length > tableBudget) {
+      const lines = block.split('\n');
+      // 表格 markdown 首两行是表头与分隔线，务必保留
+      const head = lines.slice(0, 2).join('\n');
+      const bodyBudget = Math.max(0, tableBudget - head.length);
+      kept.push(`${head}\n${lines.slice(2).join('\n').slice(0, bodyBudget)}…`);
+      tableTruncated += 1;
+      meta.push(`- 表格已截断：原表 ${block.length} 字符`);
+      tableBudget = 0;
+    } else {
+      kept.push(block);
+      tableBudget -= block.length;
+    }
+  }
+  if (tableTruncated > 0 && tableBudget <= 0) {
+    meta.push(`- 另有 ${tableTruncated} 个表格超出总预算被省略/截断（预算 ${TABLE_BUDGET_IN_SUMMARY} 字符）`);
+  }
 
   let textBudget = TEXT_BUDGET_IN_SUMMARY;
-  const meta: string[] = [];
 
   for (const block of textBlocks) {
     if (textBudget <= 0) {

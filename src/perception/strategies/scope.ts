@@ -8,7 +8,22 @@ import { isElementVisible } from './text';
 
 export const ELEMENT_ID_MAIN_CONTENT = '__vben_main_content';
 
+/**
+ * 宿主配置的主内容区选择器（v1 P0-1 修复：此前 config.mainContentSelector
+ * 从未被消费，根节点硬编码 vben id，非 vben 宿主感知恒空）。
+ */
+let configuredRootSelector: null | string = null;
+
+export function setConfiguredRootSelector(selector: null | string | undefined): void {
+  configuredRootSelector = selector?.trim() || null;
+}
+
+/** 根节点解析：宿主配置优先命中 → 回退 vben 内置 id（兼容既有 web-antd） */
 export function getMainContentRoot(): HTMLElement | null {
+  if (configuredRootSelector) {
+    const el = document.querySelector<HTMLElement>(configuredRootSelector);
+    if (el) return el;
+  }
   return document.getElementById(ELEMENT_ID_MAIN_CONTENT);
 }
 

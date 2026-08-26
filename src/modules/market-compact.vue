@@ -4,7 +4,7 @@ import { message } from 'ant-design-vue';
 
 import { computed, onMounted, ref } from 'vue';
 
-import type { MarketPlugin } from '../api/market';
+import type { InstalledPlugin, MarketPlugin, SchemaPage } from '../api/market';
 import {
   deleteMcpServer,
   fetchMarketCatalog,
@@ -12,7 +12,7 @@ import {
   listInstalledPlugins,
   toggleMcpServerEnabled,
 } from '../api/market';
-import type { McpServer } from '../types';
+import SchemaPageRenderer from './schema-page-renderer.vue';
 
 defineOptions({ name: 'AiMarket' });
 
@@ -25,20 +25,18 @@ const tab = ref<'discover' | 'installed'>('discover');
 const loading = ref(false);
 /** 门户目录：null = 不可达/未配置（降级态） */
 const catalog = ref<MarketPlugin[] | null>(null);
-const installed = ref<McpServer[]>([]);
+const installed = ref<InstalledPlugin[]>([]);
+/** UI 插件页面（schema-page）当前打开的插件 */
+const pagePlugin = ref<InstalledPlugin | null>(null);
 const keyword = ref('');
 const category = ref('全部');
 const detailPlugin = ref<MarketPlugin | null>(null);
 
-/** 目录项与已安装记录的关联键（注册名约定 market-{pluginCode}） */
-function pluginCodeOf(server: McpServer): string {
-  return (server.name ?? '').replace(/^market-/, '');
+function findInstalled(plugin: MarketPlugin): InstalledPlugin | undefined {
+  return installed.value.find((s) => s.pluginCode === plugin.pluginCode);
 }
-function findInstalled(plugin: MarketPlugin): McpServer | undefined {
-  return installed.value.find((s) => pluginCodeOf(s) === plugin.pluginCode);
-}
-function catalogPluginOf(server: McpServer): MarketPlugin | undefined {
-  return catalog.value?.find((p) => p.pluginCode === pluginCodeOf(server));
+function catalogPluginOf(inst: InstalledPlugin): MarketPlugin | undefined {
+  return catalog.value?.find((p) => p.pluginCode === inst.pluginCode);
 }
 
 const categories = computed(() => {
@@ -64,7 +62,7 @@ async function loadAll() {
   try {
     const [cat, inst] = await Promise.all([
       fetchMarketCatalog(),
-      listInstalledPlugins().catch(() => [] as McpServer[]),
+      listInstalledPlugins().catch(() => [] as InstalledPlugin[]),
     ]);
     catalog.value = cat;
     installed.value = inst;
@@ -110,29 +108,37 @@ function closeInstall() {
 }
 
 // ===== 已安装管理 =====
-async function toggle(server: McpServer, enabled: boolean) {
-  if (!server.id) return;
-  await toggleMcpServerEnabled(server.id, enabled);
+async function toggle(inst: InstalledPlugin, enabled: boolean) {
+  if (!inst.serverId) return;
+  await toggleMcpServerEnabled(inst.serverId, enabled);
   message.success(enabled ? '已启用（AI 可调用其工具）' : '已停用（AI 不再调用）');
   await loadAll();
 }
 
-async function uninstall(server: McpServer) {
-  if (!server.id) return;
-  await deleteMcpServer(server.id);
-  message.success('已卸载（仅移除本系统注册，门户产物不受影响）');
+async function uninstall(inst: InstalledPlugin) {
+  if (!inst.serverId) return;
+  await deleteMcpServer(inst.serverId);
+  message.success('已卸载（仅移除本系统注册，目录与统计不受影响）');
   await loadAll();
 }
 
-function statusText(server: McpServer): string {
-  if (!server.enabled) return '已停用';
-  return server.status === 'connected' ? '已连接' : server.status === 'error' ? '异常' : '检测中';
+/** 打开 UI 插件页面（schema-page）。工具白名单 = 本插件目录工具清单 */
+function openPage(inst: InstalledPlugin) {
+  pagePlugin.value = inst;
 }
-function statusClass(server: McpServer): string {
-  if (!server.enabled) return 'text-amber-600';
-  return server.status === 'connected'
+function pageToolWhitelist(inst: InstalledPlugin): string[] {
+  return catalogPluginOf(inst)?.tools.map((t) => t.name) ?? [];
+}
+
+function statusText(inst: InstalledPlugin): string {
+  if (inst.enabled === false) return '已停用';
+  return inst.status === 'connected' ? '已连接' : inst.status === 'error' ? '异常' : '检测中';
+}
+function statusClass(inst: InstalledPlugin): string {
+  if (inst.enabled === false) return 'text-amber-600';
+  return inst.status === 'connected'
     ? 'text-emerald-600'
-    : server.status === 'error'
+    : inst.status === 'error'
       ? 'text-red-500'
       : 'text-amber-600';
 }
@@ -253,16 +259,17 @@ function statusClass(server: McpServer): string {
         </div>
         <div
           v-for="s in installed"
-          :key="s.id"
+          :key="s.serverId"
           class="mb-2.5 flex gap-2.5 rounded-lg border border-border bg-card p-3"
         >
           <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-[18px]">
-            {{ catalogPluginOf(s)?.icon ?? '🧩' }}
+            {{ s.icon ?? '🧩' }}
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5 text-[13px] font-medium">
-              {{ catalogPluginOf(s)?.name ?? pluginCodeOf(s) }}
+              {{ s.name ?? s.pluginCode }}
               <span :class="statusClass(s)" class="text-[10px]">● {{ statusText(s) }}</span>
+              <span v-if="s.ui" class="rounded bg-primary/10 px-1 text-[10px] text-primary">UI 插件</span>
             </div>
             <div class="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
               <span v-if="s.status === 'error' && s.lastError" class="text-red-500">{{ s.lastError }}</span>
@@ -272,17 +279,24 @@ function statusClass(server: McpServer): string {
               <span>启用</span>
               <button
                 class="relative h-4 w-7 rounded-full transition-colors"
-                :class="s.enabled ? 'bg-primary' : 'bg-muted'"
-                @click="toggle(s, !s.enabled)"
+                :class="s.enabled !== false ? 'bg-primary' : 'bg-muted'"
+                @click="toggle(s, s.enabled === false)"
               >
                 <span
                   class="absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform"
-                  :class="s.enabled ? 'left-[14px]' : 'left-0.5'"
+                  :class="s.enabled !== false ? 'left-[14px]' : 'left-0.5'"
                 />
               </button>
             </div>
           </div>
           <div class="flex flex-shrink-0 flex-col justify-center gap-1.5">
+            <button
+              v-if="s.ui?.type === 'schema-page'"
+              class="h-7 rounded-md bg-primary px-2.5 text-[11px] text-primary-foreground hover:bg-primary/90"
+              @click="openPage(s)"
+            >
+              打开页面
+            </button>
             <button
               class="h-7 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 text-[11px] text-red-500 hover:bg-red-500/10"
               @click="uninstall(s)"
@@ -340,6 +354,28 @@ function statusClass(server: McpServer): string {
       >
         安装
       </button>
+    </div>
+
+    <!-- UI 插件页面（schema-page 渲染器） -->
+    <div v-if="pagePlugin?.ui?.type === 'schema-page'" class="absolute inset-0 z-10 flex flex-col bg-background">
+      <div class="flex h-[38px] flex-shrink-0 items-center gap-2 border-b border-border px-3">
+        <span class="text-[13px] font-medium">{{ pagePlugin.name ?? pagePlugin.pluginCode }}</span>
+        <span class="text-[10px] text-muted-foreground">UI 插件 · 声明式页面</span>
+        <button
+          class="ml-auto h-6 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-accent"
+          @click="pagePlugin = null"
+        >
+          关闭
+        </button>
+      </div>
+      <div class="min-h-0 flex-1 p-3">
+        <SchemaPageRenderer
+          :key="pagePlugin.serverId"
+          :page="(pagePlugin.ui!.page as SchemaPage)"
+          :server-id="pagePlugin.serverId"
+          :tool-whitelist="pageToolWhitelist(pagePlugin)"
+        />
+      </div>
     </div>
 
     <!-- 安装确认 / 进度弹层 -->

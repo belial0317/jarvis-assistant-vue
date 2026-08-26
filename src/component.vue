@@ -89,7 +89,7 @@ watch(open, (isOpen) => {
 // ===== PP2 感知管线挂接：路由监听 + 可见性门控 =====
 // 挂载即启动（与抽屉开关无关：页面感知服务于会话上下文，抽屉仅门控观察）
 onMounted(() => {
-  pagePerception.start(resolvedConfig.route);
+  pagePerception.start(resolvedConfig.route, resolvedConfig.mainContentSelector);
 });
 
 onBeforeUnmount(() => {

@@ -56,6 +56,7 @@ export enum McpApi {
   TEST = '/mcp/servers/{id}/test',
   TOOLS = '/mcp/servers/{id}/tools',
   REFRESH_TOOLS = '/mcp/servers/{id}/refresh-tools',
+  INVOKE = '/mcp/servers/{id}/tools/{toolName}/invoke',
   RESOURCES = '/mcp/servers/{id}/resources',
   PROMPTS = '/mcp/servers/{id}/prompts',
 }

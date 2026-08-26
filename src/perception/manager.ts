@@ -22,6 +22,7 @@ import { applyAdaptiveStrategy } from './strategies/adaptive';
 import {
   ELEMENT_ID_MAIN_CONTENT,
   getMainContentRoot,
+  setConfiguredRootSelector,
   resolveScope,
 } from './strategies/scope';
 import { extractTablesFromScope } from './strategies/table';
@@ -62,9 +63,9 @@ class PagePerceptionManager {
   // ===== 策略编排（原 capturePageContext 主体，行为零改动） =====
 
   collectNow(routePath?: string, routeTitle?: string): CaptureResult {
-    const root = document.getElementById(ELEMENT_ID_MAIN_CONTENT);
+    const root = getMainContentRoot();
     if (!root) {
-      console.warn('[page-context] root element #__vben_main_content not found');
+      console.warn('[page-context] 主内容区根节点未找到（宿主 mainContentSelector 与 #__vben_main_content 均未命中）');
       return { text: '', insight: null };
     }
 
@@ -145,7 +146,7 @@ class PagePerceptionManager {
   // ===== 洞察编排（原 buildPageInsight 主体，行为零改动） =====
 
   insightNow(routePath?: string, routeTitle?: string): PageInsight | null {
-    const root = document.getElementById(ELEMENT_ID_MAIN_CONTENT);
+    const root = getMainContentRoot();
     if (!root) return null;
 
     const config = routePath ? configStore.findConfig(routePath) : null;
@@ -248,8 +249,9 @@ class PagePerceptionManager {
 
   // ===== 生命周期挂接（component.vue 调用） =====
 
-  /** 组件挂载：路由监听 + 可见性监听 */
-  start(route?: RouteContextProvider): void {
+  /** 组件挂载：路由监听 + 可见性监听（mainContentSelector：宿主主内容区选择器） */
+  start(route?: RouteContextProvider, mainContentSelector?: null | string): void {
+    setConfiguredRootSelector(mainContentSelector);
     this.routeProvider = route ?? null;
     this.visibility.start();
     if (route) {
@@ -289,9 +291,10 @@ class PagePerceptionManager {
     }
   }
 
-  /** 路由切换：重建会话（对标 Fiber 随插件激活/销毁） */
+  /** 路由切换：重建会话（对标 Fiber 随插件激活/销毁）并立即首采（P1-2 修复：此前仅建会话不采集） */
   handleRouteChange(path: string): void {
     this.ensureSession(path);
+    void this.session?.capture('route');
   }
 
   /** 配置库更新级联（loadPerceptionConfigs 完成后调用，携带真实 diff 结果） */
