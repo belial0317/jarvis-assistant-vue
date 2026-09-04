@@ -14,6 +14,7 @@
  * 注：此处路径不含 /ai 前缀，由 aiRequestClient.baseURL='/ai' 自动拼接。
  */
 import type { ChatMessage } from '../types';
+import type { HostBusinessContext } from '../providers/config';
 
 import { aiRequestClient } from './client';
 import { ChatApi, path } from './endpoints';
@@ -51,6 +52,8 @@ export interface ChatMessageSendDTO {
   role?: 'assistant' | 'system' | 'tool' | 'user';
   content: string;
   agentId?: string;
+  /** 会话模型（供应商目录 ID 或模型原始名；后端按此路由上游模型） */
+  modelId?: string;
   /** 当前路由上下文（JSON 字符串：path / title / name） */
   currentRoute?: string;
   /** 当前页面内容上下文（DOM 提取后的文本） */
@@ -60,6 +63,20 @@ export interface ChatMessageSendDTO {
    * 双写期与 pageContext 并存，后端未升级时忽略未知字段。
    */
   pageSnapshot?: PageSnapshotPayload;
+  /** P3-T6：会话内浏览轨迹（最近 5 页；旧后端忽略未知字段） */
+  sessionTrail?: SessionTrailItem[];
+  /** T6：宿主业务上下文（权威感知源；未注入时不携带，旧后端忽略未知字段） */
+  hostContext?: HostBusinessContext;
+  /** S4/T3：用户选中文本（显式引用；无选中不携带，≤2000 字符） */
+  selectedText?: string;
+}
+
+/** P3-T6：浏览轨迹条目 */
+export interface SessionTrailItem {
+  routePath: string;
+  title?: string;
+  entity?: string;
+  capturedAt: number;
 }
 
 /** PP4：随消息上行的页面快照（PageSnapshot 的传输形态，剔除本地 insight） */
@@ -230,17 +247,75 @@ export function stopGenerate(sessionId: string) {
 /**
  * 页面上下文一句话摘要（PP3：可携带 contentHash 启用后端 Redis 去重，
  * 同一内容重复调用 0 次 LLM；不携带时行为与旧版一致）
+ * signal：调用方超时中止（T1-6）
  */
 export function summarizeContext(
   currentRoute: string,
   pageContext: string,
   contentHash?: string,
+  signal?: AbortSignal,
 ) {
-  return aiRequestClient.post<string>(ChatApi.SUMMARIZE_CONTEXT, {
-    currentRoute,
-    pageContext,
-    ...(contentHash ? { contentHash } : {}),
-  });
+  return aiRequestClient.post<string>(
+    ChatApi.SUMMARIZE_CONTEXT,
+    {
+      currentRoute,
+      pageContext,
+      ...(contentHash ? { contentHash } : {}),
+    },
+    { signal, __silent: true },
+  );
+}
+
+/**
+ * T1-2：感知端点请求体（页面画像 / 意图推断共用）。
+ * epoch 由调用方如实构造：有管线快照用快照 epoch；无快照走 capturePageContext
+ * 回退文本时显式声明 configId='fallback'（对齐 onSend P4-T3 语义），不伪造默认配置。
+ */
+export interface PerceptionSnapshotRequestDTO {
+  epoch?: { configId: string; configVersion: number };
+  routePath: string;
+  capturedAt: number;
+  mutationCount: number;
+  stale: boolean;
+  text: string;
+}
+
+/** 后端页面画像 VO（解读关闭/降级时字段为空；结构与后端 PageProfile record 对齐） */
+export interface PageProfileVO {
+  pageType?: string;
+  businessContent?: string;
+  entities?: Array<{ name: string; type?: string; value: string }>;
+  dataStatus?: string;
+  operations?: string[];
+  insight?: string;
+  topics?: string[];
+}
+
+/** 后端意图推断条目 */
+export interface PageIntentVO {
+  text: string;
+}
+
+/** 页面画像洞察（探测性调用：__silent 不弹全局错误 toast，失败由调用方回退 UI） */
+export function fetchPageProfile(dto: PerceptionSnapshotRequestDTO) {
+  return aiRequestClient.post<PageProfileVO | null>(
+    ChatApi.PERCEPTION_INSIGHT,
+    dto,
+    { __silent: true },
+  );
+}
+
+/** 意图推断「猜你想问」（后端 IntentRequest：快照嵌套于 snapshot 字段） */
+export function fetchPageIntents(dto: {
+  snapshot: PerceptionSnapshotRequestDTO;
+  sessionTrail?: string;
+  recentUserMessages?: string[];
+}) {
+  return aiRequestClient.post<PageIntentVO[]>(
+    ChatApi.PERCEPTION_INTENTS,
+    dto,
+    { __silent: true },
+  );
 }
 
 /**

@@ -15,6 +15,8 @@ import type { Agent, AgentStrategy, DesensitizeRule } from '../types';
 
 import { listMcpServers } from '../api/mcp';
 import { listProviders } from '../api/provider';
+import { listKnowledgeBases } from '../api/knowledge';
+import { listDatasources } from '../api/nl2sql';
 
 defineOptions({ name: 'AiAgentForm' });
 
@@ -66,9 +68,43 @@ async function loadMcpServerOptions() {
   }
 }
 
+/** 知识库选项（RAG 绑定：Agent 回答时检索这些知识库） */
+const kbOptions = ref<Array<{ label: string; value: string }>>([]);
+
+/** 数据源选项（P2-T6：Agent 可查的 NL2SQL 数据源；不选 = 全局不限定） */
+const dsOptions = ref<Array<{ label: string; value: string }>>([]);
+
+async function loadKbOptions() {
+  try {
+    const kbs = await listKnowledgeBases();
+    kbOptions.value = kbs.map((k) => ({
+      label: k.name,
+      value: k.id,
+    }));
+  } catch (e) {
+    // 缺陷⑥：失败原因必须显形（此前静默吞掉导致下拉空且无从排查）
+    console.warn('[agent-form] 知识库选项加载失败', e);
+    kbOptions.value = [];
+  }
+}
+
+async function loadDsOptions() {
+  try {
+    const dss = await listDatasources();
+    dsOptions.value = (dss ?? []).map((d) => ({
+      label: `${d.name}（${d.defaultDb ?? '库'}）`,
+      value: String(d.id),
+    }));
+  } catch (e) {
+    console.warn('[agent-form] 数据源选项加载失败', e);
+    dsOptions.value = [];
+  }
+}
+
 onMounted(() => {
   loadModelOptions();
   loadMcpServerOptions();
+  loadKbOptions();
 });
 
 const strategyOptions: Array<{ label: string; value: AgentStrategy }> = [
@@ -114,6 +150,8 @@ interface FormState {
   temperature: number;
   maxTokens: number;
   allowedMcpServers: string[];
+  allowedKnowledgeBases: string[];
+  allowedDatasources: string[] | null;
 }
 
 const defaultState = (): FormState => ({
@@ -136,6 +174,8 @@ const defaultState = (): FormState => ({
   temperature: 0.5,
   maxTokens: 8192,
   allowedMcpServers: [],
+  allowedKnowledgeBases: [],
+  allowedDatasources: null,
 });
 
 const form = reactive<FormState>(defaultState());
@@ -144,8 +184,10 @@ watch(
   () => props.open,
   (val) => {
     if (!val) return;
-    // 每次打开时刷新模型选项（供应商可能已变更）
+    // 每次打开时刷新模型/知识库选项（供应商与知识库可能已变更）
     loadModelOptions();
+    loadKbOptions();
+    loadDsOptions();
     Object.assign(form, defaultState());
     if (props.data) {
       form.name = props.data.name;
@@ -169,6 +211,8 @@ watch(
       form.temperature = props.data.modelParams.temperature;
       form.maxTokens = props.data.modelParams.maxTokens;
       form.allowedMcpServers = props.data.allowedMcpServers ?? [];
+      form.allowedKnowledgeBases = props.data.allowedKnowledgeBases ?? [];
+      form.allowedDatasources = props.data.allowedDatasources ?? null;
     }
   },
   { immediate: true },
@@ -246,7 +290,8 @@ function handleOk() {
     allowedTools: ['read_file', 'grep'],
     allowedMcpServers: form.allowedMcpServers,
     allowedSkills: [],
-    allowedKnowledgeBases: [],
+    allowedKnowledgeBases: form.allowedKnowledgeBases,
+    allowedDatasources: form.allowedDatasources,
     permissions: {
       fileRead: 'cwd',
       fileWrite: 'none',
@@ -464,6 +509,39 @@ function handleCancel() {
           placeholder="不选则该 Agent 无法调用 MCP 工具"
           :allow-clear="true"
           class="w-full"
+        />
+      </div>
+
+      <!-- 知识库绑定（RAG）：回答时对这些知识库做向量检索增强 -->
+      <div>
+        <label class="mb-1 block text-[12px] text-muted-foreground">
+          知识库
+          <span class="ml-1 text-[10px] text-muted-foreground/60">选择回答时检索增强的知识库（RAG）</span>
+        </label>
+        <a-select
+          v-model:value="form.allowedKnowledgeBases"
+          mode="multiple"
+          :options="kbOptions"
+          placeholder="不选则该 Agent 回答不使用知识库"
+          :allow-clear="true"
+          class="w-full"
+        />
+      </div>
+
+      <!-- P2-T6：数据源绑定（null=全局不限定；清空全部=显式禁用 db 源） -->
+      <div>
+        <label class="mb-1 block text-[12px] text-muted-foreground">
+          数据源
+          <span class="ml-1 text-[10px] text-muted-foreground/60">Agent 可查询的 NL2SQL 数据源；不选 = 全局不限定</span>
+        </label>
+        <a-select
+          :value="form.allowedDatasources ?? undefined"
+          mode="multiple"
+          :options="dsOptions"
+          placeholder="不选则不限定（可查全部启用中数据源）"
+          :allow-clear="true"
+          class="w-full"
+          @change="(v: any) => (form.allowedDatasources = (v as string[]) ?? null)"
         />
       </div>
 

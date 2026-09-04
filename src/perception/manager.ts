@@ -12,6 +12,7 @@ import { configStore } from './config-store';
 import { DomCollector } from './collectors/dom-collector';
 import { watchRoutes, type RouteWatchHandle } from './collectors/route-collector';
 import { VisibilityController } from './collectors/visibility-collector';
+import { SelectionCollector } from './collectors/selection-collector';
 import { PerceptionSession } from './kernel';
 import {
   analyzeDomStats,
@@ -57,19 +58,47 @@ class PagePerceptionManager {
     }
   });
 
+  /** S4/T3 选中文本采集器(独立轻量信号,不进内核快照) */
+  private readonly selectionCollector = new SelectionCollector(() => {});
+
+  /** S5/T4 感知总开关(false → 停全部采集、读口返回空;默认开,宿主可配) */
+  private perceptionEnabled = true;
+
   private routeWatch: RouteWatchHandle | null = null;
   private routeProvider: RouteContextProvider | null = null;
 
   // ===== 策略编排（原 capturePageContext 主体，行为零改动） =====
 
+  /**
+   * 采集根解析（T1-8 修复：感知配置 selectors 独立生效）。
+   * 宿主显式声明（mainContentSelector / #__vben_main_content）优先；
+   * 未声明时，命中路由的感知配置 selectors 承担采集根职责——以 body 作
+   * 名义根，实际 scope 仍由 resolveScope 按 selectors 决定；两者皆无 →
+   * null（保持旧「主内容区不存在返回空」契约，golden 基线不变）。
+   */
+  private resolveRoot(config: ReturnType<typeof configStore.findConfig> | null): HTMLElement | null {
+    const hostRoot = getMainContentRoot();
+    if (hostRoot) return hostRoot;
+    if (config && config.selectors.length > 0) {
+      const hit = config.selectors.some((sel) => {
+        try {
+          return !!document.querySelector(sel);
+        } catch {
+          return false;
+        }
+      });
+      if (hit) return document.body;
+    }
+    return null;
+  }
+
   collectNow(routePath?: string, routeTitle?: string): CaptureResult {
-    const root = getMainContentRoot();
+    const config = routePath ? configStore.findConfig(routePath) : null;
+    const root = this.resolveRoot(config);
     if (!root) {
       console.warn('[page-context] 主内容区根节点未找到（宿主 mainContentSelector 与 #__vben_main_content 均未命中）');
       return { text: '', insight: null };
     }
-
-    const config = routePath ? configStore.findConfig(routePath) : null;
     const strategy = config?.strategy ?? 'auto';
 
     let tableMd = '';
@@ -146,10 +175,10 @@ class PagePerceptionManager {
   // ===== 洞察编排（原 buildPageInsight 主体，行为零改动） =====
 
   insightNow(routePath?: string, routeTitle?: string): PageInsight | null {
-    const root = getMainContentRoot();
+    const config = routePath ? configStore.findConfig(routePath) : null;
+    const root = this.resolveRoot(config);
     if (!root) return null;
 
-    const config = routePath ? configStore.findConfig(routePath) : null;
     const scope = resolveScope(root, config);
 
     const stats = scope
@@ -195,7 +224,8 @@ class PagePerceptionManager {
     this.sessionRoute = path;
     this.sessionTitle = this.currentRouteTitle();
 
-    const root = getMainContentRoot();
+    const config = path ? configStore.findConfig(path) : null;
+    const root = this.resolveRoot(config);
     if (!root) return null;
 
     this.session = new PerceptionSession(path, {
@@ -254,6 +284,7 @@ class PagePerceptionManager {
     setConfiguredRootSelector(mainContentSelector);
     this.routeProvider = route ?? null;
     this.visibility.start();
+    this.selectionCollector.start();
     if (route) {
       this.routeWatch = watchRoutes(route, (path) => {
         this.handleRouteChange(path);
@@ -269,6 +300,7 @@ class PagePerceptionManager {
     this.visibility.stop();
     this.domCollector.detach();
     this.observeTargets = [];
+    this.selectionCollector.stop();
     await this.session?.dispose();
     this.session = null;
     this.sessionRoute = null;
@@ -297,8 +329,15 @@ class PagePerceptionManager {
     void this.session?.capture('route');
   }
 
-  /** 配置库更新级联（loadPerceptionConfigs 完成后调用，携带真实 diff 结果） */
+  /** 配置库更新级联（loadPerceptionConfigs 完成后调用，携带真实 diff 结果）。
+   * T1-8：配置从无到有时 session 可能为 null（此前无宿主主内容区且无配置），
+   * 需重建会话并首采，否则新配置永远不生效。 */
   notifyConfigUpdate(changedIds: string[] = []): void {
+    if (!this.session && this.sessionRoute) {
+      const session = this.ensureSession(this.sessionRoute);
+      void session?.capture('config');
+      return;
+    }
     this.session?.notifyConfigUpdate(configStore.version, changedIds);
   }
 
@@ -319,6 +358,37 @@ class PagePerceptionManager {
   /** 当前感知状态（无会话为 'none'） */
   getState(): PerceptionStage {
     return this.session?.state ?? 'none';
+  }
+
+  /** S4/T3：当前选中文本（发送时刻读取；空串 = 无选中，调用方不注入） */
+  getSelection(): string {
+    return this.perceptionEnabled ? this.selectionCollector.getText() : '';
+  }
+
+  /** S5/T4：感知总开关。false → 停全部采集器并拆会话；true → 按当前路由恢复 */
+  setPerceptionEnabled(enabled: boolean): void {
+    if (this.perceptionEnabled === enabled) return;
+    this.perceptionEnabled = enabled;
+    if (!enabled) {
+      this.selectionCollector.stop();
+      this.visibility.stop();
+      this.domCollector.detach();
+      this.observeTargets = [];
+      void this.session?.dispose();
+      this.session = null;
+      return;
+    }
+    // 恢复:采集器重启 + 会话按当前路由重建并首采
+    this.selectionCollector.start();
+    this.visibility.start();
+    if (this.sessionRoute) {
+      this.ensureSession(this.sessionRoute);
+      void this.session?.capture('config');
+    }
+  }
+
+  isPerceptionEnabled(): boolean {
+    return this.perceptionEnabled;
   }
 
   /**

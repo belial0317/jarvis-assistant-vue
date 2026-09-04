@@ -83,6 +83,9 @@ export function extractVisibleText(root: HTMLElement): string {
     const tag = el.tagName.toLowerCase();
 
     if (NOISE_TAGS.has(tag)) return;
+    // S5/T4:表单元素整体跳过 —— input value 是 property 而非文本子节点,
+    // textarea 的子节点文本会被框架回填为用户输入;一律不采集(敏感输入不外泄)
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'option') return;
     if (tag === 'table' || el.classList?.contains('ant-table')) return;
     if (NOISE_CLASS_PATTERNS.some((cls) => el.classList?.contains(cls))) return;
     if (!isElementVisible(el)) return;

@@ -35,6 +35,9 @@ const RefreshIcon = createIconifyIcon('lucide:rotate-ccw');
 const AlertIcon = createIconifyIcon('lucide:alert-triangle');
 const BotIcon = createIconifyIcon('lucide:bot');
 const TerminalIcon = createIconifyIcon('lucide:terminal');
+const DocIcon = createIconifyIcon('lucide:file-text');
+const DbIcon = createIconifyIcon('lucide:database');
+const PageIcon = createIconifyIcon('lucide:monitor');
 
 const isUser = computed(() => props.message.role === 'user');
 const isAssistant = computed(() => props.message.role === 'assistant');
@@ -119,6 +122,19 @@ function formatArgs(args: Record<string, any>): string {
   }
 }
 
+// 相似度分数展示（0-1 保留 2 位）
+function formatScore(score?: number): string {
+  return typeof score === 'number' ? score.toFixed(2) : '';
+}
+
+// P1-T7：引用源类型样式（kb=文档 / db=数据库 / perception=当前页面；旧后端无 sourceType 回退 kb）
+const REF_SOURCE_ICON: Record<string, any> = { kb: DocIcon, db: DbIcon, perception: PageIcon };
+const REF_SOURCE_LABEL: Record<string, string> = {
+  kb: '知识库',
+  db: '数据库',
+  perception: '当前页面',
+};
+
 async function copyContent() {
   try {
     await navigator.clipboard.writeText(props.message.content);
@@ -170,6 +186,50 @@ async function copyContent() {
         :result="message.sqlResult"
         class="mt-2 w-full"
       />
+
+      <!-- RAG 检索引用（T4：多源命中，P1-T7 按源类型分图标；刷新后不保留） -->
+      <div
+        v-if="isAssistant && message.references?.length"
+        class="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground"
+      >
+        <span>参考来源</span>
+        <span
+          v-for="(ref, i) in message.references"
+          :key="ref.segmentId ?? i"
+          class="flex max-w-[240px] items-center gap-1 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5"
+          :title="`${REF_SOURCE_LABEL[ref.sourceType ?? 'kb']} · ${ref.documentName}`"
+        >
+          <component
+            :is="REF_SOURCE_ICON[ref.sourceType ?? 'kb'] ?? DocIcon"
+            class="h-3 w-3 flex-shrink-0"
+          />
+          <span class="truncate">{{ ref.documentName || '未命名文档' }}</span>
+          <span v-if="formatScore(ref.score)" class="flex-shrink-0 text-muted-foreground/70">
+            {{ formatScore(ref.score) }}
+          </span>
+        </span>
+      </div>
+
+      <!-- P1-T5：反思轮次过程（深度搜索；流式期展开，完成后折叠为摘要） -->
+      <div
+        v-if="isAssistant && message.reflectionRounds?.length"
+        class="text-[11px] text-muted-foreground"
+      >
+        <template v-if="streaming">
+          <div
+            v-for="r in message.reflectionRounds"
+            :key="r.round"
+            class="flex items-center gap-1.5 py-0.5"
+          >
+            <component :is="LoaderIcon" class="h-3 w-3 animate-spin text-blue-500" />
+            <span>深度搜索·第 {{ r.round }} 轮：{{ r.gapQueries?.join('；') }}</span>
+          </div>
+        </template>
+        <div v-else class="flex items-center gap-1 py-0.5">
+          <component :is="DocIcon" class="h-3 w-3" />
+          <span>深度搜索 {{ message.reflectionRounds.length }} 轮</span>
+        </div>
+      </div>
 
       <!-- pending 占位（等待首个 chunk 到达） -->
       <div

@@ -94,6 +94,10 @@ export enum ChatApi {
   STREAM = '/chat/sessions/{sessionId}/stream',
   /** 页面上下文一句话摘要（同步 POST） */
   SUMMARIZE_CONTEXT = '/chat/summarize-context',
+  /** 页面画像洞察（LLM 结构化解读，POST） */
+  PERCEPTION_INSIGHT = '/chat/perception/insight',
+  /** 意图推断「猜你想问」（POST） */
+  PERCEPTION_INTENTS = '/chat/perception/intents',
   /** 斜杠命令（已启用 Skill） */
   SLASH_COMMANDS = '/chat/slash-commands',
   /** Diff 审批：接受/拒绝/按行接受 */

@@ -33,6 +33,24 @@ export interface AIModuleMeta {
 /** 消息角色 */
 export type MessageRole = 'assistant' | 'system' | 'tool' | 'user';
 
+/** RAG 检索引用（T4：助手消息的"参考来源"角标，来自 references SSE 事件） */
+export interface MessageReference {
+  /** 来源文档名 */
+  documentName?: string;
+  /** 命中分段 ID（雪花 ID 字符串） */
+  segmentId?: string;
+  /** 相似度分数 0-1 */
+  score?: number;
+  /** 信息源类型（P1：kb 知识库 / db 数据库 / perception 当前页面；旧后端无此字段） */
+  sourceType?: 'db' | 'kb' | 'perception';
+}
+
+/** P1-T5：反思轮次（来自 reflection SSE 事件，深度搜索过程展示） */
+export interface ReflectionRound {
+  round: number;
+  gapQueries: string[];
+}
+
 /** 消息状态 */
 export type MessageStatus =
   | 'complete'
@@ -89,6 +107,10 @@ export interface ChatMessage {
   agentStatus?: AgentRunStatus;
   /** NL2SQL 查询结果（仅 NL2SQL 技能触发的助手消息有值，前端渲染表格/图表，sql 字段已脱敏） */
   sqlResult?: import('./api/nl2sql').SqlResultVO;
+  /** RAG 检索引用列表（仅命中知识库的助手消息有值，P0 仅流式期存在不持久化） */
+  references?: MessageReference[];
+  /** 反思轮次（P1-T5：深度搜索过程，完成后折叠展示；仅流式期存在） */
+  reflectionRounds?: ReflectionRound[];
   status: MessageStatus;
   tokens?: { input: number; output: number };
   error?: string;
@@ -172,6 +194,8 @@ export interface StreamChunk {
     | 'error'
     | 'nl2sql_result'
     | 'reasoning'
+    | 'references'
+    | 'reflection'
     | 'replace'
     | 'tool_approval'
     | 'tool_call'
@@ -188,6 +212,13 @@ export interface StreamChunk {
   agentStatus?: AgentRunStatus;
   /** nl2sql_result: NL2SQL 查询结果（前端渲染表格/图表，sql 字段已脱敏为 null） */
   sqlResult?: import('./api/nl2sql').SqlResultVO;
+  /** references: RAG 检索引用列表（先于 delta/done 推送，渲染"参考来源"角标） */
+  references?: MessageReference[];
+  /** reflection: 反思轮次列表（旧契约：完成后一次推数组） */
+  rounds?: ReflectionRound[];
+  /** reflection: 单轮实时事件（P2 新契约：检索进行中逐轮推） */
+  round?: number;
+  gapQueries?: string[];
   error?: string;
 }
 
@@ -452,6 +483,8 @@ export interface Agent {
   allowedSkills: string[];
   /** 允许检索的知识库 ID 列表（参考 dify dataset_retrieval 工具） */
   allowedKnowledgeBases: string[];
+  /** 允许的数据源 ID（null=全局不限定；[]=显式禁用全部 db 源；P2-T6） */
+  allowedDatasources?: null | string[];
   modelId: string;
   modelParams: AgentModelParams;
   /** 工具调用策略 */

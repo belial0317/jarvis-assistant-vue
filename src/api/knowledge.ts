@@ -30,22 +30,72 @@ export interface KnowledgeBaseSaveDTO {
   indexTechnique?: 'high_quality' | 'economy';
   embeddingModelId?: string;
   embeddingModelProvider?: string;
+  /** UI 层用对象；发送前由下方 API 序列化为 JSON 字符串（后端 DTO 契约为 String） */
   chunkConfig?: any;
   retrievalModel?: any;
 }
 
+/**
+ * 后端契约适配：KnowledgeBaseEntity/VO/DTO 三层的 chunkConfig 与 retrievalModel
+ * 均为 JSON 字符串（E2E 实测 2026-09-03：对象直发触发 MismatchedInputException）。
+ * 本层是契约边界——提交时 stringify，回显时 parse + 表单默认值兜底。
+ */
+function parseJsonField<T>(raw: unknown): T | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw === 'object') return raw as T;
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      console.warn('[knowledge] chunkConfig/retrievalModel 非法 JSON，使用表单默认值');
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** 字符串 VO → 前端对象模型（缺省字段回落表单默认值，编辑回显不空白） */
+function toKnowledgeBase(raw: any): KnowledgeBase {
+  return {
+    ...raw,
+    chunkConfig: parseJsonField(raw?.chunkConfig) ?? {
+      structure: 'text',
+      separator: '\\n',
+      maxTokens: 512,
+      chunkOverlap: 64,
+      preProcessingRules: [
+        { id: 'remove_extra_spaces', enabled: true },
+        { id: 'remove_urls_emails', enabled: false },
+      ],
+    },
+    retrievalModel: parseJsonField(raw?.retrievalModel) ?? {
+      searchMethod: 'hybrid',
+      rerankingEnable: false,
+      topK: 4,
+      scoreThresholdEnabled: false,
+    },
+  };
+}
+
 export function listKnowledgeBases(params?: KnowledgeQueryDTO) {
-  return aiRequestClient.get<KnowledgeBaseVO[]>(KnowledgeApi.BASES, { params });
+  return aiRequestClient
+    .get<any[]>(KnowledgeApi.BASES, { params })
+    .then((list) => list.map(toKnowledgeBase));
 }
 
 export function getKnowledgeBase(id: string) {
-  return aiRequestClient.get<KnowledgeBaseVO>(
-    path(KnowledgeApi.BASE_DETAIL, { id }),
-  );
+  return aiRequestClient
+    .get<any>(path(KnowledgeApi.BASE_DETAIL, { id }))
+    .then(toKnowledgeBase);
 }
 
 export function saveKnowledgeBase(dto: KnowledgeBaseSaveDTO) {
-  return aiRequestClient.post<string>(KnowledgeApi.BASE_SAVE, dto);
+  const payload = {
+    ...dto,
+    chunkConfig: dto.chunkConfig == null ? undefined : JSON.stringify(dto.chunkConfig),
+    retrievalModel: dto.retrievalModel == null ? undefined : JSON.stringify(dto.retrievalModel),
+  };
+  return aiRequestClient.post<string>(KnowledgeApi.BASE_SAVE, payload);
 }
 
 export function deleteKnowledgeBase(id: string) {

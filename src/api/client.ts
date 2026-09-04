@@ -110,7 +110,10 @@ function resolveBaseURL(): string {
 function buildHeaders(custom?: Record<string, string>): Record<string, string> {
   const aiConfig = useAiAssistantConfig();
   const headers: Record<string, string> = { ...custom };
-  const token = aiConfig.auth?.getToken();
+  // 鉴权链：宿主注入 config.auth 优先；回落设置模块本地 Key。
+  // 必须双通道：异步回调（点击 / await 之后）里 inject 拿到的是宿主全局兜底配置，
+  // 该配置往往没有 auth——此时设置页配置的 Key（门户运营平台分配）是唯一凭证。
+  const token = aiConfig.auth?.getToken?.() ?? getAiApiKey();
   const authHeader = formatToken(token);
   if (authHeader) {
     headers.Authorization = authHeader;

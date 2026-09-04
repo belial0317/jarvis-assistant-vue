@@ -23,7 +23,7 @@ export {
 } from './providers/inject';
 
 // ===== Provider 接口 =====
-export type { AiAssistantConfig } from './providers/config';
+export type { AiAssistantConfig, HostBusinessContext } from './providers/config';
 export type { AuthProvider } from './providers/auth-provider';
 export type {
   HttpAdapter,

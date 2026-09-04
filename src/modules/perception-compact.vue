@@ -10,19 +10,21 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import type {
   PerceptionConfigSaveDTO,
   PerceptionConfigVO,
 } from '../api/perception';
 import { useBackendHealth } from '../composables/use-backend-health';
+import { usePerception } from '../composables/use-perception';
 
 import {
   deletePerceptionConfig,
   listPerceptionConfigs,
   savePerceptionConfig,
 } from '../api/perception';
+import { fetchPageProfile } from '../api/chat';
 
 import { loadPerceptionConfigs } from '../utils/page-context';
 
@@ -170,6 +172,75 @@ onMounted(() => {
   if (health.value.state === 'disconnected') return;
   loadConfigs();
 });
+
+// ===== P4-T1：当前页面画像 =====
+interface PageProfileView {
+  pageType?: string;
+  businessContent?: string;
+  entities?: Array<{ name: string; type?: string; value: string }>;
+  dataStatus?: string;
+  operations?: string[];
+  insight?: string;
+}
+
+const profile = ref<PageProfileView | null>(null);
+const profileLoadFailed = ref(false);
+const profileCapturedAt = ref<number>(0);
+const nowTick = ref(Date.now());
+
+const profileVisible = computed(() => !!profile.value);
+const profileAgeText = computed(() => {
+  if (!profileCapturedAt.value) return '';
+  const age = Math.max(0, Math.round((nowTick.value - profileCapturedAt.value) / 1000));
+  return age > 300 ? `采集于 ${Math.round(age / 60)} 分钟前（可能已过期）` : `采集于 ${age} 秒前`;
+});
+
+// T1-2/T1-3：画像请求收编统一 API;快照优先取感知管线(epoch/text 同源),
+// 无快照回退手动采集并显式声明 fallback epoch(不伪造默认配置)
+const perception = usePerception();
+
+async function refreshProfile() {
+  profileLoadFailed.value = false;
+  try {
+    const snapshot = perception.snapshot.value;
+    const text =
+      snapshot?.text ??
+      (document.querySelector('#main-content') as HTMLElement | null)?.innerText ??
+      document.body.innerText.slice(0, 8000);
+    if (!text) {
+      profile.value = null;
+      profileLoadFailed.value = true;
+      return;
+    }
+    const p = await fetchPageProfile({
+      epoch: snapshot?.epoch ?? { configId: 'fallback', configVersion: 1 },
+      routePath: location.pathname,
+      capturedAt: snapshot?.capturedAt ?? Date.now(),
+      mutationCount: snapshot?.mutationCount ?? 0,
+      stale: snapshot?.stale ?? false,
+      text,
+    });
+    // 空画像（解读关闭）→ 回退态；注意不渲染空壳
+    const hasContent =
+      p && (p.businessContent || p.dataStatus || (p.entities && p.entities.length));
+    profile.value = hasContent ? p : null;
+    profileCapturedAt.value = hasContent ? (snapshotCapturedAt.value || Date.now()) : 0;
+    if (!hasContent) {
+      profileLoadFailed.value = true;
+    }
+  } catch {
+    profileLoadFailed.value = true;
+  }
+}
+
+const snapshotCapturedAt = ref(0);
+
+onMounted(() => {
+  refreshProfile();
+  // 时效计时器（30s 粒度足够）
+  setInterval(() => (nowTick.value = Date.now()), 30000);
+});
+
 </script>
 
 <template>
@@ -197,6 +268,42 @@ onMounted(() => {
         <PlusIcon class="h-3.5 w-3.5" />
         新增配置
       </button>
+    </div>
+
+    <!-- P4-T1：当前页面画像（解读关闭/降级 → 显示回退说明，不渲染空壳） -->
+    <div v-if="profileVisible" class="border-b border-border px-4 py-3">
+      <div class="mb-2 flex items-center gap-2">
+        <span class="text-xs font-semibold text-foreground">当前页面画像</span>
+        <Tag v-if="profile?.pageType" color="purple" class="text-[10px]">{{ profile.pageType }}</Tag>
+        <span v-if="profileAgeText" class="text-[10px] text-muted-foreground">{{ profileAgeText }}</span>
+      </div>
+      <div class="space-y-1.5 text-[11px] leading-4 text-muted-foreground">
+        <div v-if="profile?.businessContent">业务：{{ profile.businessContent }}</div>
+        <div v-if="profile?.dataStatus">数据：{{ profile.dataStatus }}</div>
+        <div v-if="profile?.operations?.length">
+          操作：{{ profile.operations.join(' → ') }}
+        </div>
+        <div v-if="profile?.entities?.length" class="flex flex-wrap items-center gap-1">
+          <span>实体：</span>
+          <span
+            v-for="e in profile.entities.slice(0, 8)"
+            :key="e.name + e.value"
+            class="rounded border border-border bg-muted/40 px-1 py-px font-mono text-[10px]"
+            :title="`${e.type}: ${e.value}`"
+          >
+            {{ e.name }}={{ e.value.length > 20 ? e.value.slice(0, 20) + '…' : e.value }}
+          </span>
+        </div>
+        <div v-if="profile?.insight" class="rounded bg-amber-500/10 px-1.5 py-1 text-amber-600">
+          💡 {{ profile.insight }}
+        </div>
+      </div>
+    </div>
+    <div
+      v-else-if="profileLoadFailed"
+      class="border-b border-border px-4 py-2 text-[10px] text-muted-foreground/70"
+    >
+      页面解读未启用或暂不可用，仅显示原文摘要。
     </div>
 
     <!-- 配置列表 -->

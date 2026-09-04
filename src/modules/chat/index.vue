@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { createIconifyIcon } from '../../providers/icons';
 
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
 import type {
   ChatMessage,
@@ -13,6 +13,8 @@ import type {
 
 import {
   approveDiff,
+  fetchPageIntents,
+  fetchPageProfile,
   listMessages,
   listSessions,
   respondToolApproval,
@@ -22,6 +24,7 @@ import {
   summarizeContext,
   toChatMessage,
   type ChatSessionVO,
+  type PageProfileVO,
 } from '../../api/chat';
 import { listAgents, type AgentVO } from '../../api/agent';
 import { listProviders } from '../../api/provider';
@@ -33,13 +36,14 @@ import {
   loadPerceptionConfigs,
   type PageInsight,
 } from '../../utils/page-context';
-import { summaryHash } from '../../perception/hash';
+import { fnv1a64, summaryHash } from '../../perception/hash';
 import { useBackendHealth } from '../../composables/use-backend-health';
 import { usePerception } from '../../composables/use-perception';
-import type { PerceptionStage } from '../../perception/manager';
+import { pagePerception, type PerceptionStage } from '../../perception/manager';
 import StatusBar from '../../components/status-bar.vue';
 import InputArea from './input-area.vue';
 import { useAiAssistantConfig } from '../../providers';
+import { AI_ASSISTANT_HOST_CONTEXT_KEY } from '../../providers/host-context';
 
 defineOptions({ name: 'AiChatWorkbench' });
 
@@ -49,12 +53,28 @@ defineEmits<{
 }>();
 
 const config = useAiAssistantConfig();
+// T6:宿主业务上下文(权威感知源;未注入为 null,不伪造默认值)
+const hostContextStore = inject(AI_ASSISTANT_HOST_CONTEXT_KEY, null);
+
+// ===== S5/T4:感知总开关(用户偏好持久化;宿主 config.perception.defaultEnabled 决定缺省) =====
+const PERCEPTION_ENABLED_KEY = 'ai_assistant_perception_enabled';
+const perceptionOn = ref(true);
+function applyPerceptionEnabled(enabled: boolean, persist: boolean): void {
+  perceptionOn.value = enabled;
+  pagePerception.setPerceptionEnabled(enabled);
+  if (persist) localStorage.setItem(PERCEPTION_ENABLED_KEY, String(enabled));
+}
+function togglePerception(): void {
+  applyPerceptionEnabled(!perceptionOn.value, true);
+}
+const perceptionEnabled = computed(() => perceptionOn.value);
 
 const PlusIcon = createIconifyIcon('lucide:plus');
 const HistoryIcon = createIconifyIcon('lucide:history');
 const TrashIcon = createIconifyIcon('lucide:trash-2');
 const ChevronIcon = createIconifyIcon('lucide:chevron-left');
 const BotIcon = createIconifyIcon('lucide:bot');
+const RadarIcon = createIconifyIcon('lucide:radar');
 
 // ===== 会话管理（真实 API） =====
 const sessions = ref<ChatSession[]>([]);
@@ -122,6 +142,102 @@ let lastSummaryToken = 0;
 
 const health = useBackendHealth();
 
+// P3-T5：页面画像洞察（业务内容/数据现状 + 话题 chips；解读关闭/降级 → null 回退现状 UI）
+const pageProfileInsight = ref<{ business: string; dataStatus: string; topics: string[] } | null>(null);
+let lastProfileHash = '';
+
+// P3-T6：会话内浏览轨迹（最近 5 页；发送后记录当前页，支撑跨页指代）
+const sessionTrail = ref<Array<{ routePath: string; title?: string; entity?: string; capturedAt: number }>>([]);
+
+/**
+ * T1-2/T1-3：构造感知端点（画像/意图）快照请求体。
+ * epoch 如实声明——有管线快照用快照 epoch；无快照走 capturePageContext 回退
+ * 文本时显式 configId='fallback'（对齐 onSend P4-T3 语义）；无任何文本返回 null
+ * （调用方跳过请求，缺失是业务事实，不伪造默认配置）。
+ */
+function buildPerceptionPayload() {
+  const snapshot = perception.snapshot.value;
+  const text = snapshot?.text ?? capturePageContext(config.route?.getRoute().path);
+  if (!text) return null;
+  return {
+    epoch: snapshot?.epoch ?? { configId: 'fallback', configVersion: 1 },
+    routePath: config.route?.getRoute().path ?? '/',
+    capturedAt: snapshot?.capturedAt ?? Date.now(),
+    mutationCount: snapshot?.mutationCount ?? 0,
+    stale: snapshot?.stale ?? false,
+    text,
+  };
+}
+
+async function refreshPageProfile() {
+  const payload = buildPerceptionPayload();
+  if (!payload) {
+    pageProfileInsight.value = null;
+    return;
+  }
+  try {
+    const p: PageProfileVO | null = await fetchPageProfile(payload);
+    // 空画像（解读关闭/降级）→ 显式回退，不渲染空壳
+    pageProfileInsight.value =
+      p && (p.businessContent || p.dataStatus)
+        ? {
+            business: p.businessContent ?? '',
+            dataStatus: p.dataStatus ?? '',
+            topics: (p.topics ?? []).slice(0, 3),
+          }
+        : null;
+  } catch {
+    pageProfileInsight.value = null;
+  }
+}
+
+// P4-T2：意图推断（"猜你想问"；画像+轨迹驱动；开关关闭/失败 → null 回退话题 chips）
+const intentSuggestions = ref<string[] | null>(null);
+
+async function refreshIntents() {
+  const payload = buildPerceptionPayload();
+  if (!payload) {
+    intentSuggestions.value = null;
+    return;
+  }
+  try {
+    const list = await fetchPageIntents({
+      snapshot: payload,
+      sessionTrail: sessionTrail.value.map(
+        (t) => `${t.routePath}${t.entity ? `（主体：${t.entity}）` : ''}`,
+      ).join('；') || '无',
+      recentUserMessages: activeSession.value?.messages
+        .filter((m) => m.role === 'user')
+        .slice(-3)
+        .map((m) => m.content.slice(0, 80)) ?? [],
+    });
+    const texts = (list ?? []).map((i) => i.text).filter(Boolean);
+    intentSuggestions.value = texts.length ? texts : null;
+  } catch {
+    intentSuggestions.value = null;
+  }
+}
+
+// 打开助手且无消息时拉取（T1-5：全文 FNV-1a 哈希做去重键，
+// 修复旧 text.slice(0,100) 键下长列表翻页画像不刷新的问题）
+watch(
+  () => [hasMessages.value, perception.snapshot.value?.text],
+  ([empty]) => {
+    if (!empty) {
+      pageProfileInsight.value = null;
+      return;
+    }
+    const text = perception.snapshot.value?.text ?? '';
+    const hash = text ? fnv1a64(text) : '';
+    if (hash && hash !== lastProfileHash) {
+      lastProfileHash = hash;
+      refreshPageProfile();
+      refreshIntents();
+    }
+  },
+  { immediate: true },
+);
+
 async function refreshPageInsight() {
   // PP4：洞察已由感知管线驱动（pageInsight computed），此处只负责标题摘要
   // 先同步刷新一次快照：路由刚切换时确保拿到当前页面内容而非上一页 last-good
@@ -156,19 +272,18 @@ async function refreshPageInsight() {
   insightLoading.value = true;
   perceptionStage.value = 'perceiving';
   insightSummary.value = '';
+  // T1-6：15s 超时经 AbortSignal 真正中止底层请求（旧 Promise.race 仅放弃等待，
+  // fetch 仍在后台占用连接）；信号贯通 summarizeContext → doRequest → fetch。
+  const timeoutCtrl = new AbortController();
+  const timeoutId = setTimeout(() => timeoutCtrl.abort(), 15000);
   try {
-    // 兜底：15s 超时防止 axios 拦截器异常导致 promise 永久 pending
-    const summary = await Promise.race([
-      summarizeContext(
-        routeJson,
-        contextForSummary,
-        // PP3：内容哈希 → 后端 Redis 去重（TTL 24h），同页面重复导航 0 次 LLM
-        summaryHash(routeJson, contextForSummary),
-      ),
-      new Promise<string>((_, reject) =>
-        setTimeout(() => reject(new Error('summarizeContext timeout after 15s')), 15000),
-      ),
-    ]);
+    const summary = await summarizeContext(
+      routeJson,
+      contextForSummary,
+      // PP3：内容哈希 → 后端 Redis 去重（TTL 24h），同页面重复导航 0 次 LLM
+      summaryHash(routeJson, contextForSummary),
+      timeoutCtrl.signal,
+    );
     if (token !== lastSummaryToken) return;
     insightSummary.value = (summary || '').trim();
     perceptionStage.value = insightSummary.value ? 'done' : 'failed';
@@ -178,6 +293,7 @@ async function refreshPageInsight() {
     insightSummary.value = '';
     perceptionStage.value = 'failed';
   } finally {
+    clearTimeout(timeoutId);
     if (token === lastSummaryToken) insightLoading.value = false;
   }
 }
@@ -189,16 +305,42 @@ watch(
 
 // ===== 模型选择（真实 Provider API） =====
 // 后端 Provider 为平台级共享（不参与多租户过滤），加载已启用供应商的模型
-// 默认模型（isDefault=true）排在第一位，供 input-area 下拉框默认选中
-const modelOptions = ref<Array<{ label: string; value: string }>>([]);
+// 默认模型优先级：宿主/门户下发的 syncParams.defaultModel（控制台系统设置）>
+// 供应商目录 isDefault 排序。管理端配置的模型需存在于供应商模型目录中。
+const modelOptions = ref<Array<{ label: string; value: string; name?: string }>>([]);
+
+const syncedDefaultModel = config.syncParams?.defaultModel?.trim() ?? '';
+// 控制台下发的模型列表（系统参数 component.models），配置后为唯一模型源
+const consoleModels = (config.models ?? [])
+    .map((m) => m.trim())
+    .filter(Boolean);
+
+/** 新会话默认模型：系统设置默认模型在选项中时优先，否则回落列表/目录首位 */
+function preferredModelId(): string {
+  if (syncedDefaultModel) {
+    const hit = modelOptions.value.find(
+      (m) =>
+        m.value === syncedDefaultModel ||
+        (m.name ?? '').toLowerCase() === syncedDefaultModel.toLowerCase() ||
+        m.label.toLowerCase() === syncedDefaultModel.toLowerCase(),
+    );
+    if (hit) return hit.value;
+  }
+  return modelOptions.value[0]?.value ?? '';
+}
 
 async function loadModelOptions() {
+  // 控制台配置了模型列表：以它为唯一模型源（值为模型名，后端原始名直传）
+  if (consoleModels.length > 0) {
+    modelOptions.value = consoleModels.map((m) => ({ label: m, value: m }));
+    return;
+  }
   try {
     const providers = await listProviders({ enabled: true });
-    const list: Array<{ label: string; value: string }> = [];
+    const list: Array<{ label: string; value: string; name?: string }> = [];
     for (const p of providers) {
       for (const m of p.models ?? []) {
-        list.push({ label: m.displayName, value: m.id });
+        list.push({ label: m.displayName, value: m.id, name: m.name });
       }
     }
     // 排序：isDefault=true 排第一（默认选中），其他按原顺序
@@ -308,14 +450,14 @@ async function startChatWithAgent(agentId: string) {
     const newId = await saveSession({
       title: '新对话',
       agentId,
-      modelId: modelOptions.value[0]?.value ?? '',
+      modelId: preferredModelId(),
     });
     // 构造本地会话对象并加入列表
     const session = reactive<ChatSession>({
       id: newId,
       title: '新对话',
       agentId,
-      modelId: modelOptions.value[0]?.value ?? '',
+      modelId: preferredModelId(),
       messages: [],
       context: [],
       pinned: false,
@@ -338,7 +480,9 @@ function voToSession(vo: ChatSessionVO): ChatSession {
     id: vo.id,
     title: vo.title,
     agentId: vo.agentId,
-    modelId: vo.modelId ?? modelOptions.value[0]?.value ?? '',
+    // 控制台系统设置为权威：会话加载时模型对齐系统设置（目录中存在时），
+    // 存储值仅作回落（目录为空等场景）。会话内手动切换下拉仍即时生效。
+    modelId: preferredModelId() || vo.modelId || '',
     messages: [],
     context: [],
     pinned: vo.pinned,
@@ -386,7 +530,7 @@ async function startNewSession() {
     const session = reactive<ChatSession>({
       id,
       title,
-      modelId: modelOptions.value[0]?.value ?? '',
+      modelId: preferredModelId(),
       messages: [],
       context: [],
       tokenCount: 0,
@@ -511,26 +655,80 @@ async function onSend(text: string) {
     });
     // PP4：发送前同步重采集（stale 时 DOM 同步重读），快照 + 纯文本双写。
     // 后端优先消费 pageSnapshot（含时效元信息），未升级时忽略并回退 pageContext。
-    const snapshot = perception.refresh();
-    const pageContext =
-      snapshot?.text ?? capturePageContext(config.route?.getRoute().path);
+    // S5/T4:感知关闭 → 不采集、不上行任何页面/选中/宿主上下文字段
+    const snapshot = perceptionOn.value ? perception.refresh() : null;
+    // S4/T3：发送时刻读取选中（独立轻量信号，随消息平级上行）
+    const selection = perceptionOn.value ? pagePerception.getSelection() : '';
+    const fallbackText = perceptionOn.value
+      ? capturePageContext(config.route?.getRoute().path)
+      : '';
+    const pageContext = snapshot?.text ?? fallbackText;
+    // P4-T3：无感知配置的宿主页面构造回退快照——保证画像/实体路由在任何宿主页都可用
+    // （captureLatest 返回 null = 主内容区选择器未命中，而非页面无内容）
+    const effectiveSnapshot = snapshot ?? (fallbackText
+      ? {
+          epoch: { configId: 'fallback', configVersion: 1 },
+          routePath: config.route?.getRoute().path ?? '/',
+          capturedAt: Date.now(),
+          mutationCount: 0,
+          stale: false,
+          text: fallbackText,
+        }
+      : null);
 
+    // P3-T6：发送即记录当前页到轨迹（同 route 连续不重复；S5 感知关闭时不记录）
+    if (perceptionOn.value) {
+      const routePath = config.route?.getRoute().path ?? '/';
+      const last = sessionTrail.value[sessionTrail.value.length - 1];
+      if (!last || last.routePath !== routePath) {
+        // P4-T3：主体实体回填（画像 businessContent 中提取"主体=xxx"；无画像留空不伪造）
+        let entityValue: string | undefined;
+        if (pageProfileInsight.value?.business) {
+          const m = pageProfileInsight.value.business.match(/主体[=：:]\s*([^，,；;\s]+)/);
+          entityValue = m?.[1];
+        }
+        sessionTrail.value.push({
+          routePath,
+          // T1-4：轨迹记录页面标题（旧值误填 route.name —— 路由注册名非展示标题）
+          title: (config.route?.getRoute().title as string) || undefined,
+          entity: entityValue,
+          capturedAt: Date.now(),
+        });
+        if (sessionTrail.value.length > 5) {
+          sessionTrail.value = sessionTrail.value.slice(-5);
+        }
+      }
+    }
+
+    const hostContext = perceptionOn.value
+      ? hostContextStore?.context.value ?? null
+      : null;
     await streamMessage(
       session.id,
       {
         agentId: session.agentId,
+        // 会话模型跟随下拉选择（后端按 modelId 解析网关模型名）
+        modelId: session.modelId,
         content: text,
         currentRoute,
         pageContext,
-        ...(snapshot
+        // S4/T3：用户选中文本（显式引用「指哪问哪」；无选中不携带）
+        ...(selection ? { selectedText: selection } : {}),
+        // T6：宿主业务上下文（权威感知源，后端注入【宿主业务上下文】块）
+        ...(hostContext ? { hostContext } : {}),
+        // P3-T6：会话内浏览轨迹（旧后端忽略未知字段；S5 感知关闭时不上送历史轨迹）
+        ...(perceptionOn.value && sessionTrail.value.length
+          ? { sessionTrail: sessionTrail.value.slice(-5) }
+          : {}),
+        ...(effectiveSnapshot
           ? {
               pageSnapshot: {
-                epoch: snapshot.epoch,
-                routePath: snapshot.routePath,
-                capturedAt: snapshot.capturedAt,
-                mutationCount: snapshot.mutationCount,
-                stale: snapshot.stale,
-                text: snapshot.text,
+                epoch: effectiveSnapshot.epoch,
+                routePath: effectiveSnapshot.routePath,
+                capturedAt: effectiveSnapshot.capturedAt,
+                mutationCount: effectiveSnapshot.mutationCount,
+                stale: effectiveSnapshot.stale,
+                text: effectiveSnapshot.text,
               },
             }
           : {}),
@@ -613,6 +811,26 @@ async function onSend(text: string) {
               reactiveAssistant.sqlResult = chunk.sqlResult;
               scrollToBottom();
             }
+            break;
+          }
+          case 'references': {
+            // T4：RAG 检索引用（后端保证先于 delta/done 推送；空数组不推送）
+            if (chunk.references?.length) {
+              reactiveAssistant.references = chunk.references;
+            }
+            break;
+          }
+          case 'reflection': {
+            // P1-T5/P2-T5：反思过程两态兼容——
+            // 旧契约 rounds 数组（完成后一次推）；新契约 round/gapQueries 单轮实时推（追加合并）
+            if (chunk.rounds?.length) {
+              reactiveAssistant.reflectionRounds = chunk.rounds;
+            } else if (typeof chunk.round === 'number') {
+              const list = reactiveAssistant.reflectionRounds ?? [];
+              list.push({ round: chunk.round, gapQueries: chunk.gapQueries ?? [] });
+              reactiveAssistant.reflectionRounds = [...list];
+            }
+            scrollToBottom();
             break;
           }
           case 'done': {
@@ -766,6 +984,12 @@ function onContextChange(items: ContextItem[]) {
 
 // ===== 初始化 =====
 onMounted(async () => {
+  // S5/T4:感知开关初始化(用户上次偏好 > 宿主默认值 > 开)
+  const saved = localStorage.getItem(PERCEPTION_ENABLED_KEY);
+  applyPerceptionEnabled(
+    saved === null ? (config.perception?.defaultEnabled ?? true) : saved === 'true',
+    false,
+  );
   // 感知配置加载与后端健康解耦（P1-3 修复：disconnected 时整段 return 会导致
   // 后端恢复后配置库恒空；此处无条件尝试，失败由 loadPerceptionConfigs 内部静默）
   loadPerceptionConfigs().catch(() => {
@@ -906,6 +1130,17 @@ onUnmounted(() => {
             >{{ displayTitle }}</span>
           </template>
         </div>
+        <!-- S5/T4:感知开关(雷达图标;关=划线灰) -->
+        <button
+          class="flex h-7 items-center gap-1 rounded-md px-2 text-[12px] transition-colors"
+          :class="perceptionOn ? 'text-primary hover:bg-accent' : 'text-muted-foreground hover:bg-accent'"
+          :title="perceptionOn ? '页面感知:已开启(点击关闭,AI 将不读取页面内容)' : '页面感知:已关闭(点击开启)'"
+          :aria-pressed="perceptionOn"
+          @click="togglePerception"
+        >
+          <component :is="RadarIcon" class="h-3.5 w-3.5" :class="perceptionOn ? '' : 'opacity-40 line-through'" />
+          感知
+        </button>
         <!-- Agent 切换器 -->
         <div class="relative flex-shrink-0">
           <button
@@ -1035,9 +1270,37 @@ onUnmounted(() => {
               </div>
             </div>
             <div v-else class="text-[14px] font-medium">开始一段新对话</div>
+            <!-- P3-T5：页面画像洞察（有画像时显示业务句 + 画像话题；无画像回退默认 hints） -->
+            <div
+              v-if="pageProfileInsight"
+              class="mt-2 max-w-[420px] rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] leading-4 text-muted-foreground"
+            >
+              <span v-if="pageProfileInsight.business">📄 {{ pageProfileInsight.business }}</span>
+              <span v-if="pageProfileInsight.dataStatus" class="block truncate">
+                📊 {{ pageProfileInsight.dataStatus }}
+              </span>
+            </div>
+            <!-- P4-T2：猜你想问（意图建议优先；点击预填输入框） -->
+            <div
+              v-if="intentSuggestions?.length"
+              class="mt-2 flex w-full max-w-[460px] flex-col items-center gap-1"
+            >
+              <span class="text-[10px] text-muted-foreground/70">猜你想问</span>
+              <button
+                v-for="intent in intentSuggestions"
+                :key="intent"
+                class="w-full truncate rounded-lg border border-primary/30 bg-primary/5 px-3 py-1 text-[11px] text-primary transition hover:bg-primary/10"
+                :title="intent"
+                @click="onSend(intent)"
+              >
+                {{ intent }}
+              </button>
+            </div>
             <div class="mt-2 flex flex-wrap justify-center gap-2">
               <button
-                v-for="hint in (pageInsight?.hints ?? ['你好', '介绍下 Spring AI', '写一个快速排序'])"
+                v-for="hint in (pageProfileInsight?.topics?.length
+                  ? pageProfileInsight.topics
+                  : (pageInsight?.hints ?? ['你好', '介绍下 Spring AI', '写一个快速排序']))"
                 :key="hint"
                 class="rounded-full border border-border bg-card px-3 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
                 @click="onSend(hint)"

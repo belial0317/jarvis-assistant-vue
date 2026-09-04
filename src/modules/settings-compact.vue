@@ -17,6 +17,27 @@ import {
   checkBackendHealth,
   useBackendHealth,
 } from '../composables/use-backend-health';
+import { listProviders } from '../api/provider';
+import { useAiAssistantConfig } from '../providers/inject';
+import type { AiAssistantConfig } from '../providers/config';
+
+/**
+ * 宿主/门户配置（组件树内由 AiAssistant provide；兜底空对象防越级使用报错）
+ * - settings.serviceUrlVisible / apiKeyVisible：管理端字段可见性开关（缺省可见）
+ * - syncParams.defaultModel：管理端下发的默认模型（挂载时覆盖本地默认值）
+ */
+const hostConfig: AiAssistantConfig = (() => {
+  try {
+    return useAiAssistantConfig();
+  } catch {
+    return {} as AiAssistantConfig;
+  }
+})();
+
+/** 「服务地址」字段可见性（false = 管理端锁定，不可查看/编辑） */
+const showServiceUrl = hostConfig.settings?.serviceUrlVisible !== false;
+/** 「API Key」字段可见性 */
+const showApiKeyField = hostConfig.settings?.apiKeyVisible !== false;
 
 defineOptions({ name: 'AiSettings' });
 
@@ -30,7 +51,7 @@ const ServerIcon = createIconifyIcon('lucide:server');
 const settings = reactive({
   theme: 'system' as 'system' | 'light' | 'dark',
   fontSize: 13,
-  defaultModel: 'claude-sonnet-4-5',
+  defaultModel: '',
   streamSpeed: 'normal' as 'slow' | 'normal' | 'fast',
   enterToSend: true,
   showReasoning: true,
@@ -41,11 +62,36 @@ const settings = reactive({
   shortcutStop: 'Cmd+.',
 });
 
-const modelOptions = [
-  { label: 'Claude Sonnet 4.5', value: 'claude-sonnet-4-5' },
-  { label: 'Claude Haiku 3.5', value: 'claude-haiku-3-5' },
-  { label: 'GPT-4o', value: 'gpt-4o' },
-];
+// ===== 默认模型：服务端驱动，禁止写死 =====
+// 选项来源优先级：控制台系统设置模型列表（config.models）> 供应商模型目录（/providers）。
+// 选中值优先级：控制台默认模型（syncParams.defaultModel）> 列表首位。
+const modelOptions = ref<Array<{ label: string; value: string }>>([]);
+
+async function loadModelOptions() {
+  const consoleModels = (hostConfig.models ?? [])
+      .map((m) => m.trim())
+      .filter(Boolean);
+  if (consoleModels.length > 0) {
+    modelOptions.value = consoleModels.map((m) => ({ label: m, value: m }));
+  } else {
+    try {
+      const providers = await listProviders({ enabled: true });
+      modelOptions.value = providers.flatMap((p) =>
+          (p.models ?? []).map((m) => ({ label: m.displayName, value: m.name })),
+      );
+    } catch {
+      // 目录加载失败：留空下拉（不伪造模型项）
+      modelOptions.value = [];
+    }
+  }
+  // 选中值：控制台默认模型优先，其次列表首位
+  if (modelOptions.value.length > 0) {
+    const hit = modelOptions.value.find((m) => m.value === settings.defaultModel);
+    if (!hit) {
+      settings.defaultModel = modelOptions.value[0]!.value;
+    }
+  }
+}
 
 // ===== 后端服务地址配置 =====
 const DEFAULT_BASE_URL = '/ai-api';
@@ -152,7 +198,10 @@ async function testBackendConnection() {
   }
 }
 
-onMounted(loadBackendUrl);
+onMounted(() => {
+  loadBackendUrl();
+  void loadModelOptions();
+});
 </script>
 
 <template>
@@ -200,35 +249,38 @@ onMounted(loadBackendUrl);
           后端服务
         </div>
         <div class="space-y-2 rounded-lg border border-border bg-card p-3">
-          <div>
-            <label class="mb-1 block text-[11px] text-muted-foreground">
-              服务地址
-              <span class="text-muted-foreground/70">
-                （留空或 <code class="rounded bg-muted px-1 text-[10px]">/ai-api</code> 走默认代理）
-              </span>
-            </label>
-            <div class="flex items-center gap-1.5">
-              <input
-                v-model="backendUrlInput"
-                type="text"
-                class="h-7 flex-1 rounded-md border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
-                placeholder="/ai-api 或 http://192.168.1.100:8080"
-              />
-              <button
-                class="h-7 flex-shrink-0 rounded-md bg-primary px-2.5 text-[11px] text-primary-foreground hover:bg-primary/90"
-                @click="saveBackendUrl"
-              >
-                保存
-              </button>
-              <button
-                class="h-7 flex-shrink-0 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-accent"
-                title="恢复默认 /ai-api"
-                @click="handleResetBackendUrl"
-              >
-                重置
-              </button>
+          <template v-if="showServiceUrl">
+            <div>
+              <label class="mb-1 block text-[11px] text-muted-foreground">
+                服务地址
+                <span class="text-muted-foreground/70">
+                  （留空或 <code class="rounded bg-muted px-1 text-[10px]">/ai-api</code> 走默认代理）
+                </span>
+              </label>
+              <div class="flex items-center gap-1.5">
+                <input
+                  v-model="backendUrlInput"
+                  type="text"
+                  class="h-7 flex-1 rounded-md border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
+                  placeholder="/ai-api 或 http://192.168.1.100:8080"
+                />
+                <button
+                  class="h-7 flex-shrink-0 rounded-md bg-primary px-2.5 text-[11px] text-primary-foreground hover:bg-primary/90"
+                  @click="saveBackendUrl"
+                >
+                  保存
+                </button>
+                <button
+                  class="h-7 flex-shrink-0 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-accent"
+                  title="恢复默认 /ai-api"
+                  @click="handleResetBackendUrl"
+                >
+                  重置
+                </button>
+              </div>
             </div>
-            <div class="mt-1.5 flex items-center gap-2">
+          </template>
+          <div :class="showServiceUrl ? 'mt-1.5' : ''" class="flex items-center gap-2">
               <button
                 class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                 :disabled="testing"
@@ -256,10 +308,12 @@ onMounted(loadBackendUrl);
               <span v-else class="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-600">
                 ● 检测中…
               </span>
-              <span class="text-[11px] text-muted-foreground">
+              <span
+                v-if="showServiceUrl"
+                class="text-[11px] text-muted-foreground"
+              >
                 当前：<code class="rounded bg-muted px-1 text-[10px]">{{ getAiBaseUrl() }}</code>
               </span>
-            </div>
           </div>
           <div class="border-t border-border pt-2 text-[11px] leading-relaxed text-muted-foreground">
             <div>· 默认 <code class="rounded bg-muted px-1 text-[10px]">/ai-api</code>：经 vite proxy / 网关转发到后端</div>
@@ -267,8 +321,8 @@ onMounted(loadBackendUrl);
             <div>· 切换后所有 AI 请求（含流式 SSE）立即生效，无需刷新</div>
           </div>
 
-          <!-- API Key 配置 -->
-          <div class="border-t border-border pt-2">
+          <!-- API Key 配置（管理端可通过 settings.apiKeyVisible=false 锁定隐藏） -->
+          <div v-if="showApiKeyField" class="border-t border-border pt-2">
             <label class="mb-1 block text-[11px] text-muted-foreground">
               API Key
               <span v-if="!savedApiKeyMasked" class="ml-1 text-amber-600">未配置（使用宿主默认凭据）</span>

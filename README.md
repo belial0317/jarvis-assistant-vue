@@ -1,116 +1,87 @@
+<div align="center">
+
 # @jarvis/ai-assistant
 
-框架无关的 Vue 3 AI 助手组件库。支持任意 Vue 3 + ant-design-vue 项目通过 npm/pnpm 引入。
+**企业级 Vue 3 AI 助手组件库 —— 一个组件，让任何系统拥有完整 AI 助手**
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+[![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org)
+[![Ant Design Vue](https://img.shields.io/badge/AntDV-4.2+-1677FF.svg)](https://antdv.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg)](https://www.typescriptlang.org)
+
+[快速开始](#-快速开始) · [特性](#-特性) · [接入指南](#-接入指南) · [Roadmap](#-roadmap)
+
+</div>
+
+---
+
+## 简介
+
+`@jarvis/ai-assistant` 是一个**可嵌入任意 Vue 3 系统的 AI 助手组件**：一个组件标签，为你带来完整的 AI 助手体验——多会话流式对话、Agent、知识库、MCP 工具、页面感知、用量统计，以及配套的管理控制台。
+
+> 设计哲学：**组件负责体验，宿主负责身份，服务端负责模型**。通过 Provider 注入适配任何企业环境。
+
+## 特性
+
+- 即插即用：一个 `<AiAssistant />` 标签嵌入任意 Vue 3 页面，悬浮入口 + 完整抽屉
+- 会话工作台：多会话、SSE 流式输出、工具调用 Diff 审批、停止/重试
+- 多模型路由：供应商目录管理、多模型 + 默认模型、按名直传（openai-compatible）
+- 知识库（RAG）：文档分块、检索增强
+- 页面感知：DOM 上下文提取与压缩，随对话携带用户正在看的页面
+- 企业特性：权限矩阵、多租户行级隔离、配额、用量统计、脱敏管道
+- Provider 注入：HttpAdapter / Auth / Locale / RouteContext 全可定制
+- 管理控制台（配套门户）：登录、API Key、用量看板、供应商管理、权限矩阵
 
 ## 快速开始
-
-### 安装
 
 ```bash
 pnpm add @jarvis/ai-assistant
 ```
 
-### 依赖
-
-| 包 | 版本 |
-|---|---|
-| `vue` | `^3.4.0` |
-| `ant-design-vue` | `^4.2.0` |
-| `@iconify/vue` | `^4.1.0 \|\| ^5.0.0` |
-
-### 全功能引入
-
 ```ts
-// main.ts
 import { createApp } from 'vue';
 import Antd from 'ant-design-vue';
-import { createAiAssistant, AiAssistant } from '@jarvis/ai-assistant';
+import { createAiAssistant } from '@jarvis/ai-assistant';
 import '@jarvis/ai-assistant/style.css';
 
 const app = createApp(App);
 app.use(Antd);
-
 app.use(
   createAiAssistant({
     baseURL: '/ai-api',
-    auth: {
-      getToken: () => {
-        // 返回当前用户的 Bearer token
-        return useAccessStore().accessToken;
-      },
-    },
+    auth: { getToken: () => store.token },
+    locale: { getLocale: () => 'zh-CN' },
   }),
 );
 ```
 
 ```vue
-<!-- 布局文件中挂载 -->
 <template>
-  <AiAssistant ref="aiRef" />
+  <!-- 页面任意位置：悬浮入口 + 助手抽屉 -->
+  <AiAssistant />
 </template>
-
-<script setup>
-import { ref } from 'vue';
-import { AiAssistant } from '@jarvis/ai-assistant';
-const aiRef = ref();
-// aiRef.value.toggle()  — 切换抽屉
-// aiRef.value.open     — 读写抽屉状态
-</script>
 ```
 
-### 配置项
+## 配套生态
 
-```ts
-interface AiAssistantConfig {
-  /** AI 后端基础地址，默认 '/ai-api' */
-  baseURL?: string;
-  /** 鉴权提供者：返回当前用户的 Bearer token */
-  auth?: AuthProvider;
-  /** HTTP 适配器：不提供时使用内建 fetch */
-  http?: HttpAdapter;
-  /** 国际化提供者：返回语言代码，默认 'zh-CN' */
-  locale?: LocaleProvider;
-  /** 路由上下文提供者：用于页面感知（可选，不提供时降级） */
-  route?: RouteContextProvider;
-  /** 主内容区 DOM 选择器，默认 '#__vben_main_content' */
-  mainContentSelector?: string;
-  /** 错误通知回调：不提供时使用 ant-design-vue message.error */
-  onError?: (message: string) => void;
-}
-```
+| 项目 | 说明 |
+|---|---|
+| jarvis-assistant-server | Spring Boot 参考后端（会话/模型路由/用量/配额/多租户）|
+| jarvis-assistant-portal | 管理控制台门户（登录/系统设置/供应商管理）|
 
-### 按需引入
+## Roadmap
 
-```ts
-// 只引入类型
-import type { ChatMessage, Agent, McpServer } from '@jarvis/ai-assistant';
+- [x] 多模型 + 默认模型、会话切换
+- [x] 用量统计与配额
+- [ ] 多模态输入（图像/文件）
+- [ ] i18n 语言包（中/英）
+- [ ] headless 形态（去 AntDV 耦合）
+- [ ] MCP 工具生态深化
 
-// 只引入 composable
-import { useBackendHealth, checkBackendHealth } from '@jarvis/ai-assistant';
-```
+## 贡献
 
-## 功能模块
-
-| 模块 | 说明 |
-|------|------|
-| **Chat** | 多会话 AI 对话工作台，支持 SSE 流式、多模型、Agent 切换、页面感知 |
-| **Agent** | Agent 管理（新建/编辑/删除/启停/测试对话） |
-| **Skill** | 技能管理（分类/Prompt 模板/触发词/授权工具） |
-| **MCP** | MCP 服务器管理（stdio/SSE/HTTP 连接/工具刷新） |
-| **Knowledge** | 知识库管理（文档上传/索引/检索/分段管理） |
-| **Provider** | 模型供应商管理（连通性测试/模型列表） |
-| **Perception** | 页面感知配置（路由匹配/策略配置） |
-| **NL2SQL Audit** | SQL 审计日志 + 反馈闭环 |
-| **Settings** | 全局设置（后端地址/外观/对话/通知/快捷键） |
-
-## 开发
-
-```bash
-pnpm dev        # 构建监听模式
-pnpm build      # 生产构建
-pnpm type-check # 类型检查
-```
+欢迎 Issue 与 PR！请先阅读 [CONTRIBUTING](./CONTRIBUTING.md) 与 [CODE_OF_CONDUCT](./CODE_OF_CONDUCT.md)。
 
 ## License
 
-MIT
+[Apache-2.0](./LICENSE)

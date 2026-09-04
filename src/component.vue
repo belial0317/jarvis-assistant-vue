@@ -2,6 +2,10 @@
 import { createIconifyIcon } from './providers/icons';
 import type { AiAssistantConfig } from './providers/config';
 import { AI_ASSISTANT_CONFIG_KEY, useAiAssistantConfig } from './providers/inject';
+import {
+  AI_ASSISTANT_HOST_CONTEXT_KEY,
+  createHostBusinessContextStore,
+} from './providers/host-context';
 import { Drawer as ADrawer, Tooltip as ATooltip } from 'ant-design-vue';
 
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
@@ -12,6 +16,7 @@ import {
   checkBackendHealth,
   useBackendHealth,
 } from './composables/use-backend-health';
+import { applySyncParams } from './composables/use-settings-sync';
 
 import { pagePerception } from './perception/manager';
 
@@ -53,6 +58,18 @@ if (props.config) {
   }
 }
 provide(AI_ASSISTANT_CONFIG_KEY, resolvedConfig);
+
+// 宿主/门户下发的参数同步（syncParams）：挂载即应用 + 配置变更时重新应用
+// （典型场景：门户异步加载系统参数后更新 :config，此时组件已挂载）
+watch(
+  () => props.config?.syncParams,
+  (sync) => {
+    if (sync) {
+      applySyncParams(sync);
+    }
+  },
+  { immediate: true },
+);
 
 const SparklesIcon = createIconifyIcon('lucide:sparkles');
 const XIcon = createIconifyIcon('lucide:x');
@@ -109,7 +126,18 @@ watch(
   },
 );
 
-defineExpose({ toggle, open });
+// ===== T6 宿主业务上下文:静态 prop 初始化 + 实例方法动态覆盖 =====
+const hostContextStore = createHostBusinessContextStore(props.config?.businessContext);
+provide(AI_ASSISTANT_HOST_CONTEXT_KEY, hostContextStore);
+
+defineExpose({
+  toggle,
+  open,
+  /** T6:动态注入宿主业务上下文(权威感知源;校验失败显式抛错) */
+  setBusinessContext: hostContextStore.set,
+  /** T6:清除宿主业务上下文 */
+  clearBusinessContext: hostContextStore.clear,
+});
 </script>
 
 <template>
