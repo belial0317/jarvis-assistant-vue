@@ -27,6 +27,12 @@ export default defineConfig({
           ],
         },
         {
+          text: '使用',
+          items: [
+            { text: '用户操作手册', link: '/guide/user-manual' },
+          ],
+        },
+        {
           text: '已知陷阱与防御',
           items: [
             { text: '总览', link: '/guide/pitfalls/' },
