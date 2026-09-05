@@ -40,6 +40,7 @@ import { fnv1a64, summaryHash } from '../../perception/hash';
 import { useBackendHealth } from '../../composables/use-backend-health';
 import { usePerception } from '../../composables/use-perception';
 import { pagePerception, type PerceptionStage } from '../../perception/manager';
+import { trackMetric } from '../../perception/metrics';
 import StatusBar from '../../components/status-bar.vue';
 import InputArea from './input-area.vue';
 import { useAiAssistantConfig } from '../../providers';
@@ -287,6 +288,7 @@ async function refreshPageInsight() {
     if (token !== lastSummaryToken) return;
     insightSummary.value = (summary || '').trim();
     perceptionStage.value = insightSummary.value ? 'done' : 'failed';
+    trackMetric({ scene: 'summary', routePath: config.route?.getRoute().path, result: insightSummary.value ? 'ok' : 'fallback' });
   } catch (err) {
     console.warn('[refreshPageInsight] summarizeContext failed:', err);
     if (token !== lastSummaryToken) return;
@@ -975,6 +977,20 @@ async function onRetry() {
 // ===== 上下文引用 =====
 const context = ref<ContextItem[]>([]);
 
+// S6/F1:回答反馈 → 感知度量(旁路;含「AI未理解页面」默认标签)
+function onFeedback(payload: {
+  messageId: string;
+  result: 'thumb_down' | 'thumb_up';
+  label?: string;
+}): void {
+  trackMetric({
+    scene: 'feedback',
+    routePath: config.route?.getRoute().path,
+    result: payload.result,
+    label: payload.label ?? (payload.result === 'thumb_down' ? 'AI未理解页面' : undefined),
+  });
+}
+
 function onContextChange(items: ContextItem[]) {
   context.value = items;
   if (activeSession.value) {
@@ -1319,6 +1335,7 @@ onUnmounted(() => {
             @retry="onRetry"
             @diff-action="onDiffAction"
             @tool-approval="onToolApproval"
+            @feedback="onFeedback"
           />
         </template>
       </div>

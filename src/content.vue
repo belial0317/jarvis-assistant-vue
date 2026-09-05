@@ -11,7 +11,7 @@ import ChatWorkbench from './modules/chat/index.vue';
 import KnowledgeCompact from './modules/knowledge-compact.vue';
 import McpCompact from './modules/mcp-compact.vue';
 import Nl2sqlAuditCompact from './modules/nl2sql-audit-compact.vue';
-import PerceptionCompact from './modules/perception-compact.vue';
+import PerceptionCenter from './modules/perception-center.vue';
 import ProviderCompact from './modules/provider-compact.vue';
 import SettingsCompact from './modules/settings-compact.vue';
 import SkillCompact from './modules/skill-compact.vue';
@@ -154,7 +154,7 @@ watch(
         <KnowledgeCompact v-else-if="active === 'knowledge'" />
         <ProviderCompact v-else-if="active === 'provider'" />
         <Nl2sqlAuditCompact v-else-if="active === 'audit'" />
-        <PerceptionCompact v-else-if="active === 'perception'" />
+        <PerceptionCenter v-else-if="active === 'perception'" />
         <SettingsCompact v-else-if="active === 'settings'" />
       </div>
     </div>

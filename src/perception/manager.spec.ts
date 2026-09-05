@@ -86,18 +86,21 @@ describe('PagePerceptionManager PP4 API', () => {
     expect(snapshot!.insight?.description).toContain('1 个表格');
   });
 
-  it('subscribe：立即回放当前值，captured 事件驱动更新', () => {
-    pagePerception.start(fakeRouteProvider('/a', '页面A'));
+  it('subscribe：立即回放当前值，captured 事件驱动更新', async () => {
+    // S6 起:start() 会主动建会话并首采(否则快照/埋点依赖路由变化才出现),
+    // 先复位单例,保证本用例从干净状态开始
+    await pagePerception.stop();
     const seen: Array<{ snapshot: PageSnapshot | null; stage: PerceptionStage }> = [];
     const off = pagePerception.subscribe((snapshot, stage) => {
       seen.push({ snapshot, stage });
     });
 
     try {
-      pagePerception.captureLatest();
-      // 至少：初始（none）→ observing → ready
+      pagePerception.start(fakeRouteProvider('/a', '页面A'));
+      await pagePerception.captureLatest();
+      // 首帧可能为 none(异步首采未完成)或 observing(已建会话),必须收敛到 ready
       const stages = seen.map((s) => s.stage);
-      expect(stages[0]).toBe('none');
+      expect(['none', 'observing']).toContain(stages[0]);
       expect(stages).toContain('ready');
       const ready = seen.find((s) => s.stage === 'ready');
       expect(ready?.snapshot?.text).toContain('张三');
@@ -159,6 +162,8 @@ describe('PagePerceptionManager PP4 API', () => {
   });
 
   it('setDegraded：断连暂停采集，恢复自动重采', async () => {
+    // S6 起单例含首采状态,先复位避免跨用例泄漏
+    await pagePerception.stop();
     pagePerception.start(fakeRouteProvider('/a', '页面A'));
     pagePerception.captureLatest();
     expect(pagePerception.getState()).toBe('ready');

@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { createIconifyIcon } from '../providers/icons';
 
-import { computed, reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 
 import type {
   AgentRunStatus,
@@ -20,11 +20,20 @@ defineOptions({ name: 'AiMessageItem' });
 const props = defineProps<{ message: ChatMessage }>();
 const emit = defineEmits<{
   retry: [];
+  /** S6/F1:回答反馈(👍/👎 + 可选标签) */
+  feedback: [payload: { messageId: string; result: 'thumb_down' | 'thumb_up'; label?: string }];
   /** Diff 审批动作 */
   diffAction: [payload: { messageId: string; patchId: string; action: DiffAction; lineIndex?: number }];
   /** 工具审批动作 */
   toolApproval: [payload: { messageId: string; approvalId: string; approved: boolean }];
 }>();
+
+// S6/F1:反馈选择(本地态;上报由父组件 trackMetric 完成)
+const feedbackPicked = ref<'thumb_down' | 'thumb_up' | null>(null);
+function pickFeedback(result: 'thumb_down' | 'thumb_up'): void {
+  feedbackPicked.value = result;
+  emit('feedback', { messageId: props.message.id, result });
+}
 
 const CheckIcon = createIconifyIcon('lucide:check');
 const LoaderIcon = createIconifyIcon('lucide:loader');
@@ -385,6 +394,22 @@ async function copyContent() {
         v-if="isAssistant && message.status === 'complete' && message.content"
         class="flex items-center gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
       >
+        <button
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent hover:text-foreground"
+          :class="feedbackPicked === 'thumb_up' ? 'text-emerald-500' : ''"
+          title="回答有帮助"
+          @click="pickFeedback('thumb_up')"
+        >
+          👍
+        </button>
+        <button
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent hover:text-foreground"
+          :class="feedbackPicked === 'thumb_down' ? 'text-red-500' : ''"
+          title="AI 未理解页面 / 回答无帮助"
+          @click="pickFeedback('thumb_down')"
+        >
+          👎
+        </button>
         <button
           class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent hover:text-foreground"
           @click="copyContent"

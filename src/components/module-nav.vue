@@ -42,7 +42,8 @@ const ALL_MODULES: AIModuleMeta[] = [
   // 插件市场本期取消（2026-08-27 用户决策，对齐 tasks-2608-2600-23 插件化搁置）；
   // market 模块代码保留为搁置状态，恢复时加回下面一行即可：
   // { key: 'market', label: '插件市场', icon: '', description: '发现与安装第三方插件', ready: true },
-  { key: 'perception', label: '感知配置', icon: '', description: '页面感知规则', ready: true },
+  // 感知配置与感知优化合并为「感知中心」（2026-09-04 用户决策，页签容器 perception-center.vue）
+  { key: 'perception', label: '感知中心', icon: '', description: '页面感知与优化闭环', ready: true },
   { key: 'provider', label: '供应商管理', icon: '', description: '模型供应商', ready: true },
   { key: 'audit', label: 'NL2SQL 审计', icon: '', description: '查询历史与反馈', ready: true, system: true },
   { key: 'settings', label: '设置', icon: '', description: '偏好与快捷键', ready: true, system: true },

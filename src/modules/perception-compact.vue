@@ -10,7 +10,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 
 import type {
   PerceptionConfigSaveDTO,
@@ -237,8 +237,13 @@ const snapshotCapturedAt = ref(0);
 
 onMounted(() => {
   refreshProfile();
-  // 时效计时器（30s 粒度足够）
-  setInterval(() => (nowTick.value = Date.now()), 30000);
+  // 时效计时器（30s 粒度足够）；感知中心页签 v-if 切换会重挂载，必须随卸载清理
+  profileAgeTimer = setInterval(() => (nowTick.value = Date.now()), 30000);
+});
+
+let profileAgeTimer: ReturnType<typeof setInterval> | undefined;
+onUnmounted(() => {
+  if (profileAgeTimer) clearInterval(profileAgeTimer);
 });
 
 </script>

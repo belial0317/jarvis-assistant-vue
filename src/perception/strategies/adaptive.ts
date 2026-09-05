@@ -3,19 +3,27 @@
  * 直出（<=1500）→ 压缩（<=3500）→ 摘要（超预算截断 + 处理说明）。
  */
 
-const THRESHOLD_FULL = 1500;
-const THRESHOLD_COMPRESSED = 3500;
+import { estimateTokens } from './estimate';
+
+/**
+ * S10/T5:三级降级阈值由「字符数」切换为「粗粒度 token 估算」。
+ * - 中文 ≈1 字/token:行为与旧字符阈值一致(1500/3500);
+ * - 英文 ≈4 字符/token:更早进入压缩(旧口径下英文页面 token 超预算约 4 倍);
+ * - 摘要阶段块预算仍按字符(块内截断精度需求低)。
+ */
+const THRESHOLD_FULL_TOKENS = 1500;
+const THRESHOLD_COMPRESSED_TOKENS = 3500;
 const TEXT_BUDGET_IN_SUMMARY = 1500;
 /** 摘要阶段表格块总预算（v1 P1-1：此前表格块全量保留，多表页面输出不可控） */
 const TABLE_BUDGET_IN_SUMMARY = 2500;
 
 export function applyAdaptiveStrategy(content: string): string {
-  const len = content.length;
-  if (len <= THRESHOLD_FULL) {
+  const tokens = estimateTokens(content);
+  if (tokens <= THRESHOLD_FULL_TOKENS) {
     return content;
   }
 
-  if (len <= THRESHOLD_COMPRESSED) {
+  if (tokens <= THRESHOLD_COMPRESSED_TOKENS) {
     return compress(content);
   }
 

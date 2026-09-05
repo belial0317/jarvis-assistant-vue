@@ -13,6 +13,7 @@ import { DomCollector } from './collectors/dom-collector';
 import { watchRoutes, type RouteWatchHandle } from './collectors/route-collector';
 import { VisibilityController } from './collectors/visibility-collector';
 import { SelectionCollector } from './collectors/selection-collector';
+import { trackMetric } from './metrics';
 import { PerceptionSession } from './kernel';
 import {
   analyzeDomStats,
@@ -97,6 +98,7 @@ class PagePerceptionManager {
     const root = this.resolveRoot(config);
     if (!root) {
       console.warn('[page-context] 主内容区根节点未找到（宿主 mainContentSelector 与 #__vben_main_content 均未命中）');
+      trackMetric({ scene: 'capture', routePath, result: 'empty', strategy: config?.strategy ?? 'auto', selectorHits: 0, chars: 0 });
       return { text: '', insight: null };
     }
     const strategy = config?.strategy ?? 'auto';
@@ -141,6 +143,16 @@ class PagePerceptionManager {
     console.debug(
       `[page-context] route=${routePath} strategy=${strategy} tableMd=${tableMd.length}ch text=${text.length}ch combined=${combined.length}ch -> ${result.length}ch`,
     );
+    // S6/F1:采集度量(旁路,失败静默)
+    trackMetric({
+      scene: 'capture',
+      routePath,
+      result: 'ok',
+      strategy,
+      selectorHits: scope.length,
+      chars: result.length,
+      stale: false,
+    });
     return {
       text: result,
       insight: this.computeInsight(root, config, routeTitle),

@@ -143,3 +143,4 @@ export {
   kbStatusText,
   modelTypeText,
 } from './constants';
+export { getAiApiKey, getAiBaseUrl } from './api/client';

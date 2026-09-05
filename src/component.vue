@@ -107,6 +107,13 @@ watch(open, (isOpen) => {
 // 挂载即启动（与抽屉开关无关：页面感知服务于会话上下文，抽屉仅门控观察）
 onMounted(() => {
   pagePerception.start(resolvedConfig.route, resolvedConfig.mainContentSelector);
+  // S6 修复:start 只挂监听(内核首采由路由变化/变异驱动),
+  // 挂载后显式触发一次当前路由的首采,否则快照与度量埋点要等首次交互
+  const routeProvider = resolvedConfig.route;
+  if (routeProvider) {
+    const firstPath = routeProvider.getRoute().path ?? '/';
+    pagePerception.handleRouteChange(firstPath);
+  }
 });
 
 onBeforeUnmount(() => {
