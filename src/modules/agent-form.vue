@@ -107,6 +107,9 @@ onMounted(() => {
   loadKbOptions();
 });
 
+/** T9：{{model}} 占位符提示（脚本常量，避免模板内嵌套花括号） */
+const modelPlaceholder = '{{model}}';
+
 const strategyOptions: Array<{ label: string; value: AgentStrategy }> = [
   { label: 'Function Calling', value: 'function_calling' },
   { label: 'ReAct', value: 'react' },
@@ -347,10 +350,15 @@ function handleCancel() {
         </label>
         <a-textarea
           v-model:value="form.systemPrompt"
-          :rows="4"
-          placeholder="定义智能体的角色、行为与约束"
-          class="text-[12px]"
+          :rows="12"
+          :placeholder="`定义智能体的角色、行为与约束。支持 ${modelPlaceholder} 占位符（运行时替换为当前模型名）`"
+          class="font-mono text-[12px] leading-5"
         />
+        <div class="mt-1 text-[10px] leading-4 text-muted-foreground">
+          提示：这是智能体人格与行为的唯一配置来源。支持占位符
+          <code class="rounded bg-muted/60 px-1">{{ modelPlaceholder }}</code>
+          （运行时替换为当前模型名，用于身份锚定等场景）。
+        </div>
       </div>
 
       <div

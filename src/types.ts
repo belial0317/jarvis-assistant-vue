@@ -101,6 +101,12 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   /** 待审批的工具调用请求列表（AI 提议执行高风险工具时生成） */
   toolApprovals?: ToolApprovalRequest[];
+  /** ⏳ T8/T14：达到最大迭代轮次（渲染琥珀 Alert + 「继续」） */
+  exceedMaxIters?: number;
+  /** T14：思考耗时（毫秒，首个 reasoning 块到最后一块的时间差；完成后保留） */
+  reasoningMs?: number;
+  /** T14：思考起点（运行时字段，随消息创建） */
+  reasoningStartTs?: number;
   /** 文件修改 diff 块列表（AI 提议代码修改时生成） */
   diffs?: DiffPatch[];
   /** Agent 运行时状态（仅 Agent 模式下的助手消息有值） */
@@ -118,6 +124,14 @@ export interface ChatMessage {
 }
 
 /** 会话 */
+/** T10：任务摘要（task_list / 任务面板共用） */
+export interface TaskSummary {
+  id: string;
+  subject: string;
+  state: 'completed' | 'in_progress' | 'pending';
+  blockedBy?: string;
+}
+
 export interface ChatSession {
   id: string;
   title: string;
@@ -186,20 +200,39 @@ export interface Provider {
 
 /** 流式输出分片 */
 export interface StreamChunk {
+  /**
+   * 事件类型——与后端 AgentEventType 注册表对齐（tasks-2609-1020-20/T1 契约）。
+   * 标注 ⏳ 的为预留类型：后端在 T3/T8/T10/T11 落地，前端可先行注册，
+   * 未知类型由分发器默认忽略。
+   */
   type:
     | 'agent_status'
+    | 'approval_resolved' // ⏳ T3 审批裁决结果
+    | 'context_compacted' // ⏳ T4 上下文已压缩
     | 'delta'
     | 'diff'
     | 'done'
     | 'error'
+    | 'exceed_max_iters' // ⏳ T8 超过最大迭代
+    | 'interrupted' // ⏳ T8 协作式中断确认
     | 'nl2sql_result'
     | 'reasoning'
     | 'references'
     | 'reflection'
     | 'replace'
+    | 'subagent_event' // ⏳ T11 子代理事件
+    | 'task_update' // ⏳ T10 任务更新
     | 'tool_approval'
     | 'tool_call'
+    | 'tool_call_delta' // ⏳ T8 工具调用参数增量
     | 'tool_result';
+  // ---- T1 统一事件包络元数据（所有 chunk 均携带，旧后端缺失时为空） ----
+  /** 事件唯一 ID（UUID） */
+  eventId?: string;
+  /** 一次调用的关联键（后端 streamSend 生成，贯穿本轮全部事件） */
+  replyId?: string;
+  /** 服务端发出时间（Unix 毫秒） */
+  ts?: number;
   /** delta: 文本增量；reasoning: 思考增量 */
   text?: string;
   /** tool_call / tool_result: 工具调用信息 */
@@ -216,6 +249,8 @@ export interface StreamChunk {
   references?: MessageReference[];
   /** reflection: 反思轮次列表（旧契约：完成后一次推数组） */
   rounds?: ReflectionRound[];
+  /** exceed_max_iters: 超限轮次（T14） */
+  iters?: number;
   /** reflection: 单轮实时事件（P2 新契约：检索进行中逐轮推） */
   round?: number;
   gapQueries?: string[];

@@ -233,7 +233,8 @@ async function doRequest<T>(
       signal: config?.signal,
       silent: config?.__silent,
     });
-    if (adapterResult.code !== '0') {
+    // T3-M1：业务码归一化（兼容 "0"/0 两种形态，与门户 http.ts normCode 一致）
+    if (String(adapterResult.code) !== '0') {
       const msg = adapterResult.message ?? '请求失败';
       showError(msg, config?.__silent);
       throw new Error(msg);
@@ -294,8 +295,8 @@ async function doRequest<T>(
 
   const result = await response.json();
 
-  // 业务码校验：后端 R 类返回 code 为字符串 "0"（非数字 0）表示成功
-  if (result.code !== '0') {
+  // 业务码校验：归一化 "0"/0（健康端点返回数字 0，其余 R 端点返回字符串 "0"）
+  if (String(result.code) !== '0') {
     const msg = result.message ?? '请求失败';
     showError(msg, config?.__silent);
     throw new Error(msg);
@@ -473,7 +474,8 @@ export const aiRequestClient = {
       throw new Error(errorMessage);
     }
     const result = await response.json();
-    if (result.code !== '0') {
+    // T3-M1：业务码归一化（兼容 "0"/0）
+    if (String(result.code) !== '0') {
       throw new Error(result.message ?? '请求失败');
     }
     return { notModified: false, data: result.data as T, etag: responseEtag };

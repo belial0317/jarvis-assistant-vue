@@ -70,3 +70,14 @@ export function listMcpTools(id: string) {
 export function refreshMcpTools(id: string) {
   return aiRequestClient.post<McpTool[]>(path(McpApi.REFRESH_TOOLS, { id }));
 }
+
+/** T20：更新工具审批策略（确认卡"始终允许"）；policy: never/always/once */
+export function updateToolApprovalPolicy(
+  serverName: string,
+  toolName: string,
+  policy: 'always' | 'never' | 'once',
+) {
+  return aiRequestClient.patch<boolean>('/mcp/tools/approval-policy', undefined, {
+    params: { serverName, toolName, policy },
+  });
+}

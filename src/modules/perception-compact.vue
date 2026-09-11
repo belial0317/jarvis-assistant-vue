@@ -313,8 +313,8 @@ onUnmounted(() => {
 
     <!-- 配置列表 -->
     <div class="flex-1 overflow-y-auto p-3">
-      <div v-if="loading" class="py-10 text-center text-sm text-muted-foreground">
-        加载中...
+      <div v-if="loading" class="space-y-2.5 px-1 py-2">
+        <div v-for="i in 5" :key="i" class="h-10 animate-pulse rounded-lg bg-accent"></div>
       </div>
       <div
         v-else-if="!configs.length"

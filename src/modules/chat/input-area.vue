@@ -5,6 +5,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import type { ContextItem } from '../../types';
 
+import { message } from 'ant-design-vue';
+import { uploadFile } from '../../api/chat';
 import { listKnowledgeBases } from '../../api/knowledge';
 import { listEnabledSkills } from '../../api/skill';
 
@@ -12,6 +14,8 @@ defineOptions({ name: 'AiChatInputArea' });
 
 const props = defineProps<{
   loading?: boolean;
+  /** T6-U3：停止中（已点击停止、等待后端 done/error 收尾）——按钮禁用防重复 */
+  stopping?: boolean;
   context?: ContextItem[];
   /** 当前选中的模型 ID（与 modelOptions 的 value 对齐），空串表示未选中 */
   modelId?: string;
@@ -209,19 +213,37 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
-function handleFiles(files: FileList | null) {
+// T24：附件真实上传（占位卡 → 上传完成替换为真实引用；失败移除并报错）
+async function handleFiles(files: FileList | null) {
   if (!files || files.length === 0) return;
-  const items: ContextItem[] = [];
   for (const file of Array.from(files)) {
     const isImage = isImageFile(file.name);
-    items.push({
-      id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      label: `${file.name} (${formatSize(file.size)})`,
-      ref: file.name,
+    const id = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const placeholder: ContextItem = {
+      id,
+      label: `上传中… ${file.name}`,
+      ref: '',
       type: isImage ? 'image' : 'file',
-    });
+    };
+    emit('update:context', [...(props.context ?? []), placeholder]);
+    try {
+      const res = await uploadFile(file);
+      emit(
+        'update:context',
+        (props.context ?? []).map((c) =>
+          c.id === id
+            ? { ...c, label: `${res.name} (${formatSize(res.size)})`, ref: res.url }
+            : c,
+        ),
+      );
+    } catch {
+      message.error(`上传失败: ${file.name}`);
+      emit(
+        'update:context',
+        (props.context ?? []).filter((c) => c.id !== id),
+      );
+    }
   }
-  emit('update:context', [...(props.context ?? []), ...items]);
   uploadMenuOpen.value = false;
 }
 
@@ -310,6 +332,15 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     doSend();
+  }
+}
+
+/** T24：粘贴上传——剪贴板携带文件时拦截并走上传 */
+function onPaste(e: ClipboardEvent) {
+  const files = e.clipboardData?.files;
+  if (files && files.length > 0) {
+    e.preventDefault();
+    void handleFiles(files);
   }
 }
 
@@ -454,6 +485,7 @@ defineExpose({ focus: () => textareaRef.value?.focus() });
 
         <textarea
           ref="textareaRef"
+          @paste="onPaste"
           v-model="text"
           rows="1"
           placeholder="输入问题，Enter 发送 / Shift+Enter 换行；@ 引用上下文，/ 触发技能"
@@ -464,24 +496,37 @@ defineExpose({ focus: () => textareaRef.value?.focus() });
         />
 
         <div class="flex flex-shrink-0 items-center gap-1.5">
-          <select
+          <!-- T15-U5：antd Select 替代原生 select（可搜索过滤、弹出宽度自适应） -->
+          <a-select
             v-if="modelOptions && modelOptions.length"
-            v-model="selectedModelId"
-            class="h-7 cursor-pointer rounded-md border border-border bg-background px-2 text-[11px] outline-none transition-colors hover:border-primary/40"
-          >
-            <option v-for="m in modelOptions" :key="m.value" :value="m.value">
-              {{ m.label }}
-            </option>
-          </select>
+            :value="selectedModelId"
+            size="small"
+            :bordered="false"
+            class="model-select"
+            popup-match-select-width="false"
+            show-search
+            option-filter-prop="label"
+            title="切换模型"
+            :options="modelOptions"
+            @update:value="(v: string) => (selectedModelId = v)"
+          />
 
+          <!-- T6-U3 三相位：streaming=可停止 / stopping=禁用"停止中" / idle=发送 -->
           <button
             v-if="loading"
             type="button"
             class="flex h-7 w-7 items-center justify-center rounded-lg bg-red-500/10 text-red-500 transition-colors hover:bg-red-500/20"
-            aria-label="停止生成"
+            :class="stopping ? 'cursor-not-allowed opacity-50 hover:bg-red-500/10' : ''"
+            :aria-label="stopping ? '停止中' : '停止生成'"
+            :title="stopping ? '停止中…' : '停止生成'"
+            :disabled="stopping"
             @click="doStop"
           >
-            <component :is="StopIcon" class="h-3.5 w-3.5" />
+            <component
+              :is="StopIcon"
+              class="h-3.5 w-3.5"
+              :class="stopping ? 'animate-pulse' : ''"
+            />
           </button>
           <button
             v-else
@@ -520,3 +565,20 @@ defineExpose({ focus: () => textareaRef.value?.focus() });
     </div>
   </div>
 </template>
+<style scoped>
+/* T15-U5：antd Select 尺寸贴合工具栏 */
+.model-select {
+  min-width: 96px;
+  max-width: 180px;
+}
+.model-select :deep(.ant-select-selector) {
+  padding: 0 8px !important;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid hsl(var(--border)) !important;
+  background: hsl(var(--background));
+}
+.model-select :deep(.ant-select-selection-search-input) {
+  font-size: 11px;
+}
+</style>

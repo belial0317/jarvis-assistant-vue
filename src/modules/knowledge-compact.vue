@@ -609,8 +609,13 @@ onMounted(() => {
     >
       <div class="space-y-3">
         <div class="text-[12px] text-muted-foreground">{{ segmentDocName }}</div>
-        <div v-if="segmentsLoading" class="py-8 text-center text-[12px] text-muted-foreground">
-          加载中…
+        <div v-if="segmentsLoading" class="space-y-2 px-1 py-3">
+          <div
+            v-for="i in 3"
+            :key="i"
+            class="h-3 animate-pulse rounded bg-accent"
+            :style="{ width: i === 2 ? '65%' : '90%' }"
+          ></div>
         </div>
         <div v-else-if="segments.length === 0" class="py-8 text-center text-[12px] text-muted-foreground">
           暂无分段

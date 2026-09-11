@@ -38,6 +38,11 @@ export type {
 
 // ===== 图标工具 =====
 export { createIconifyIcon } from './providers/icons';
+export { setI18nLocale, getI18nLocale, t } from './i18n';
+export { maybeStartTour, resetTour, tourState, setBaseline, advanceIfSatisfied, TOUR_STEPS } from './composables/use-tour';
+export type { Locale } from './i18n';
+export { registerToolRenderer, registerToolRenderers, getToolRenderer, listToolRenderers } from './components/tool-renderers';
+import './components/builtin-tool-renderers';
 
 // ===== API 层（P0 修复：原 ./modules/* ./api/* 子路径产物缺失，统一并入根入口导出）=====
 export * from './api';

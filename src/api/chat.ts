@@ -238,6 +238,25 @@ export function streamMessage(
   );
 }
 
+/** T24：附件上传（粘贴/选择的真实通道） */
+export function uploadFile(
+  file: File,
+  signal?: AbortSignal,
+): Promise<{ name: string; url: string; size: number }> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return aiRequestClient.post('/chat/upload', fd, {
+    signal,
+  }) as Promise<{ name: string; url: string; size: number }>;
+}
+
+/** T27：恢复最近一次挂起运行（返回 assistant 消息） */
+export function resumeRun(sessionId: string) {
+  return aiRequestClient.post<ChatMessageVO>(
+    `/chat/sessions/${sessionId}/resume`,
+  );
+}
+
 /** 停止生成 */
 export function stopGenerate(sessionId: string) {
   return aiRequestClient.post(path(ChatApi.STOP, { sessionId }));

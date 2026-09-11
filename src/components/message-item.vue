@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { createIconifyIcon } from '../providers/icons';
 
-import { computed, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 
 import type {
   AgentRunStatus,
@@ -12,12 +12,18 @@ import type {
 } from '../types';
 
 import { renderMarkdown } from './markdown';
+import { getToolRenderer } from './tool-renderers';
+import { h } from 'vue';
 import DiffBlock from './diff-block.vue';
 import SqlResultTable from '../modules/sql-result-table.vue';
 
 defineOptions({ name: 'AiMessageItem' });
 
-const props = defineProps<{ message: ChatMessage }>();
+const props = defineProps<{
+  message: ChatMessage;
+  /** T14：上一条消息时间（时间分隔线判定用） */
+  prevCreatedAt?: number;
+}>();
 const emit = defineEmits<{
   retry: [];
   /** S6/F1:回答反馈(👍/👎 + 可选标签) */
@@ -26,6 +32,10 @@ const emit = defineEmits<{
   diffAction: [payload: { messageId: string; patchId: string; action: DiffAction; lineIndex?: number }];
   /** 工具审批动作 */
   toolApproval: [payload: { messageId: string; approvalId: string; approved: boolean }];
+  /** T20：授权并始终允许（写 once/never 策略由后端语义决定） */
+  toolAlwaysAllow: [payload: { messageId: string; approvalId: string; serverName?: string; toolName: string }];
+  /** T14：超过最大迭代后的「继续」请求 */
+  continueRun: [];
 }>();
 
 // S6/F1:反馈选择(本地态;上报由父组件 trackMetric 完成)
@@ -47,6 +57,7 @@ const TerminalIcon = createIconifyIcon('lucide:terminal');
 const DocIcon = createIconifyIcon('lucide:file-text');
 const DbIcon = createIconifyIcon('lucide:database');
 const PageIcon = createIconifyIcon('lucide:monitor');
+const ChevronIcon = createIconifyIcon('lucide:chevron-down');
 
 const isUser = computed(() => props.message.role === 'user');
 const isAssistant = computed(() => props.message.role === 'assistant');
@@ -54,9 +65,123 @@ const streaming = computed(() => props.message.status === 'streaming');
 const pending = computed(() => props.message.status === 'pending');
 const html = computed(() => renderMarkdown(props.message.content));
 
+// ===== T14-U13：思考折叠块（流式展开 + 0.1s 精度计时；完成后自动折叠） =====
+const reasoningOpen = ref(true);
+const nowTick = ref(Date.now());
+let reasonTimer: ReturnType<typeof setInterval> | undefined;
+const reasoningLive = computed(() => {
+  // 流式期实时耗时（毫秒）：优先用已固化的 reasoningMs
+  if (props.message.reasoningMs) return props.message.reasoningMs;
+  if (props.message.reasoningStartTs && props.message.reasoning) {
+    return nowTick.value - props.message.reasoningStartTs;
+  }
+  return 0;
+});
+const reasoningDone = computed(() => !!props.message.reasoningMs);
+const reasoningSecondsLabel = computed(() => {
+  const s = reasoningLive.value / 1000;
+  return s >= 10 ? `${Math.round(s)} 秒` : `${s.toFixed(1)} 秒`;
+});
+const reasoningLabel = computed(() => {
+  if (streaming.value) {
+    return reasoningLive.value ? `思考中… ${reasoningSecondsLabel.value}` : '思考中…';
+  }
+  // 无计时信息（如刷新后的历史消息）不显示误导性 0 秒
+  return reasoningLive.value ? `思考 ${reasoningSecondsLabel.value}` : '思考过程';
+});
+watch(
+  () => [props.message.status, props.message.reasoning] as const,
+  ([status, reasoning]) => {
+    const active = status === 'streaming' && !!reasoning;
+    if (active && !reasonTimer) {
+      reasoningOpen.value = true;
+      reasonTimer = setInterval(() => {
+        nowTick.value = Date.now();
+      }, 100);
+    }
+    if (!active) {
+      if (reasonTimer) clearInterval(reasonTimer);
+      reasonTimer = undefined;
+      if (reasoning && status !== 'streaming' && status !== 'pending') {
+        reasoningOpen.value = false; // 完成即折叠
+      }
+    }
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (reasonTimer) clearInterval(reasonTimer);
+});
+
+// ===== T14-U14：流式跳秒徽章 =====
+const elapsedSec = ref(0);
+let elapsedTimer: ReturnType<typeof setInterval> | undefined;
+watch(
+  () => props.message.status,
+  (s) => {
+    if (s === 'streaming') {
+      elapsedTimer = setInterval(() => {
+        elapsedSec.value += 1;
+      }, 1000);
+    } else if (elapsedTimer) {
+      clearInterval(elapsedTimer);
+      elapsedTimer = undefined;
+    }
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (elapsedTimer) clearInterval(elapsedTimer);
+});
+
+// ===== T14-U15：时间分隔线（与上一条消息间隔 >10 分钟） =====
+const TEN_MIN = 10 * 60 * 1000;
+const showTimeSeparator = computed(() => {
+  const cur = Number(props.message.createdAt);
+  const prev = Number(props.prevCreatedAt);
+  if (!cur || !prev) return false;
+  return cur - prev > TEN_MIN;
+});
+const separatorLabel = computed(() => {
+  const d = new Date(Number(props.message.createdAt));
+  const today = new Date();
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return d.toDateString() === today.toDateString()
+    ? hm
+    : `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+});
+
+// ===== T14-U18：超限继续 =====
+function onContinueRun() {
+  emit('continueRun');
+}
+
 const expandedMap = reactive<Record<string, boolean>>({});
 function toggle(id: string) {
   expandedMap[id] = !expandedMap[id];
+}
+
+/** T6-U1：代码块复制（事件委托——markdown 为 v-html 字符串，无法逐按钮绑定） */
+async function onMdBodyClick(e: MouseEvent) {
+  const target = e.target as HTMLElement | null;
+  const btn = target?.closest?.('.md-code-copy') as HTMLElement | null;
+  if (!btn) return;
+  const wrap = btn.closest('.md-code-wrap');
+  const code = wrap?.querySelector('pre code');
+  const text = code?.textContent ?? '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    const original = btn.textContent;
+    btn.textContent = '已复制';
+    btn.classList.add('md-copied');
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.classList.remove('md-copied');
+    }, 1200);
+  } catch {
+    // 剪贴板不可用（非安全上下文/权限拒绝）：静默失败，不打断阅读
+  }
 }
 
 const TOOL_ICON: Record<ToolStatus, any> = {
@@ -77,6 +202,28 @@ const TOOL_TEXT: Record<ToolStatus, string> = {
   running: '运行中',
   success: '完成',
 };
+
+// ===== T21：工具渲染器解析 =====
+function toolRendererFor(name: string) {
+  return getToolRenderer(name);
+}
+function parseToolResult(result: string): unknown {
+  try {
+    return JSON.parse(result);
+  } catch {
+    return result;
+  }
+}
+
+// ===== T14-U12：工具调用分组（≥3 折叠） =====
+const toolGroupOpen = ref(false);
+const toolCount = computed(() => props.message.toolCalls?.length ?? 0);
+const anyToolRunning = computed(() =>
+  (props.message.toolCalls ?? []).some((tc) => tc.status === 'running'),
+);
+const doneTools = computed(
+  () => (props.message.toolCalls ?? []).filter((tc) => tc.status === 'success').length,
+);
 
 // Agent 状态徽章
 const AGENT_PHASE_TEXT: Record<AgentRunStatus['phase'], string> = {
@@ -109,6 +256,42 @@ const RISK_STYLE: Record<ToolApprovalRequest['risk'], { label: string; class: st
 const pendingApprovals = computed(
   () => props.message.toolApprovals?.filter((a) => a.status === 'pending') ?? [],
 );
+
+// ===== T14 尾：确认卡键盘导航（↑↓ 选择 / Enter 授权 / Esc 拒绝） =====
+const keyboardSelected = ref(0);
+function onApprovalKeydown(e: KeyboardEvent) {
+  const n = pendingApprovals.value.length;
+  if (!n) return;
+  if (e.key === 'ArrowDown') {
+    keyboardSelected.value = (keyboardSelected.value + 1) % n;
+    e.preventDefault();
+  } else if (e.key === 'ArrowUp') {
+    keyboardSelected.value = (keyboardSelected.value - 1 + n) % n;
+    e.preventDefault();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const a = pendingApprovals.value[Math.min(keyboardSelected.value, n - 1)];
+    if (a) resolveApproval(a, true);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    const a = pendingApprovals.value[Math.min(keyboardSelected.value, n - 1)];
+    if (a) resolveApproval(a, false);
+  }
+}
+
+function resolveApproval(a: ToolApprovalRequest, approved: boolean) {
+  emit('toolApproval', { messageId: props.message.id, approvalId: a.approvalId, approved });
+}
+
+/** T20：授权并始终允许（approvalId 走审批；策略由父级调权限端点写 never） */
+function onAlwaysAllow(a: ToolApprovalRequest) {
+  emit('toolAlwaysAllow', {
+    messageId: props.message.id,
+    approvalId: a.approvalId,
+    serverName: a.serverName,
+    toolName: a.toolName,
+  });
+}
 
 function onDiffAction(payload: { patchId: string; action: DiffAction; lineIndex?: number }) {
   emit('diffAction', { messageId: props.message.id, ...payload });
@@ -155,6 +338,12 @@ async function copyContent() {
 
 <template>
   <div class="msg-row flex gap-2" :class="isUser ? 'flex-row-reverse' : 'flex-row'">
+    <!-- T14-U15：时间分隔线（>10 分钟） -->
+    <div v-if="showTimeSeparator" class="w-full py-2 text-center">
+      <span class="rounded-full bg-muted/60 px-2.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+        {{ separatorLabel }}
+      </span>
+    </div>
     <div
       v-if="isAssistant"
       class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary"
@@ -163,16 +352,35 @@ async function copyContent() {
     </div>
 
     <div class="flex min-w-0 max-w-[82%] flex-col gap-1.5" :class="isUser ? 'items-end' : 'items-start'">
-      <!-- 思考过程 -->
+      <!-- 思考过程（T14-U13：可折叠 + 跳秒 + 流光） -->
       <div
         v-if="message.reasoning && isAssistant"
-        class="w-full rounded-md border border-dashed border-border bg-muted/40 px-2.5 py-1 text-[12px] text-muted-foreground"
+        class="w-full rounded-md border border-dashed border-border bg-muted/40 text-[12px] text-muted-foreground"
       >
-        <div class="flex items-center gap-1 font-medium">
-          <component :is="LoaderIcon" class="h-3 w-3" />
-          思考过程
-        </div>
-        <div class="mt-1 leading-5">{{ message.reasoning }}</div>
+        <button
+          type="button"
+          class="flex w-full items-center gap-1.5 px-2.5 py-1 font-medium hover:text-foreground"
+          @click="reasoningOpen = !reasoningOpen"
+        >
+          <component
+            :is="LoaderIcon"
+            class="h-3 w-3"
+            :class="streaming ? 'animate-spin text-blue-500' : ''"
+          />
+          <span :class="streaming ? 'shimmer-text' : ''">
+            {{ reasoningLabel }}
+          </span>
+          <component
+            :is="ChevronIcon"
+            class="ml-auto h-3 w-3 transition-transform"
+            :class="reasoningOpen ? 'rotate-180' : ''"
+          />
+        </button>
+        <div
+          v-if="reasoningOpen"
+          class="whitespace-pre-wrap border-t border-dashed border-border/60 px-2.5 py-1.5 leading-5"
+          >{{ message.reasoning }}</div
+        >
       </div>
 
       <!-- 气泡 -->
@@ -185,8 +393,29 @@ async function copyContent() {
             : 'rounded-bl-sm border border-border bg-card text-foreground'
         "
       >
-        <div class="md-body" v-html="html"></div>
+        <div class="md-body" @click="onMdBodyClick" v-html="html"></div>
         <span v-if="streaming" class="cursor-blink">▋</span>
+        <!-- T14-U14：流式跳秒徽章 -->
+        <span
+          v-if="streaming && elapsedSec > 0"
+          class="ml-1 inline-block font-mono text-[10px] tabular-nums text-muted-foreground"
+        >{{ elapsedSec }}s</span>
+      </div>
+
+      <!-- T14-U18：达到最大迭代 → 琥珀提示 + 继续 -->
+      <div
+        v-if="isAssistant && message.exceedMaxIters"
+        class="flex w-full items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[12px] text-amber-600"
+      >
+        <component :is="AlertIcon" class="h-3.5 w-3.5 flex-shrink-0" />
+        <span>已达到最大迭代轮次（{{ message.exceedMaxIters }}），模型未给出最终回答</span>
+        <button
+          type="button"
+          class="ml-auto rounded border border-amber-500/50 px-2 py-0.5 font-medium hover:bg-amber-500/10"
+          @click="onContinueRun"
+        >
+          继续
+        </button>
       </div>
 
       <!-- NL2SQL 查询结果（表格/图表，SQL 已脱敏不展示） -->
@@ -286,9 +515,12 @@ async function copyContent() {
 
       <!-- 工具审批卡片 -->
       <div
-        v-for="approval in pendingApprovals"
+        v-for="(approval, ai) in pendingApprovals"
         :key="approval.approvalId"
-        class="w-full overflow-hidden rounded-lg border border-amber-500/40 bg-amber-500/5 text-[12px]"
+        tabindex="0"
+        class="w-full overflow-hidden rounded-lg border bg-amber-500/5 text-[12px] outline-none"
+        :class="ai === keyboardSelected ? 'border-amber-500 ring-1 ring-amber-500/60' : 'border-amber-500/40'"
+        @keydown="onApprovalKeydown"
       >
         <div class="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2">
           <component :is="ShieldIcon" class="h-4 w-4 flex-shrink-0 text-amber-600" />
@@ -331,6 +563,14 @@ async function copyContent() {
             <component :is="XIcon" class="h-3 w-3" />
             拒绝
           </button>
+          <!-- T20：编号选项 2——授权并始终允许（策略转 never，同工具后续免审批） -->
+          <button
+            type="button"
+            class="flex items-center gap-1 rounded-md border border-emerald-600/50 bg-transparent px-2.5 py-1 text-[11px] text-emerald-600 transition-colors hover:bg-emerald-600/10"
+            @click="onAlwaysAllow(approval)"
+          >
+            始终允许
+          </button>
           <button
             type="button"
             class="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-emerald-700"
@@ -342,10 +582,34 @@ async function copyContent() {
         </div>
       </div>
 
-      <!-- 工具调用卡片 -->
+      <!-- 工具调用卡片（T14-U12：≥3 个折叠为分组，摘要行 + 展开明细） -->
       <div
-        v-for="tc in message.toolCalls"
-        :key="tc.id"
+        v-if="toolCount >= 3"
+        class="w-full overflow-hidden rounded-lg border border-border bg-card text-[12px]"
+      >
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 hover:bg-accent"
+          @click="toolGroupOpen = !toolGroupOpen"
+        >
+          <component
+            :is="anyToolRunning ? LoaderIcon : CheckIcon"
+            class="h-3.5 w-3.5 flex-shrink-0"
+            :class="anyToolRunning ? 'animate-spin text-blue-500' : 'text-emerald-500'"
+          />
+          <span class="font-medium">执行了 {{ toolCount }} 个工具调用</span>
+          <span class="text-muted-foreground">· 完成 {{ doneTools }}</span>
+          <component
+            :is="ChevronIcon"
+            class="ml-auto h-3 w-3 transition-transform"
+            :class="toolGroupOpen ? 'rotate-180' : ''"
+          />
+        </button>
+      </div>
+      <div v-show="toolCount < 3 || toolGroupOpen" class="w-full space-y-1">
+        <div
+          v-for="tc in message.toolCalls"
+          :key="tc.id"
         class="w-full overflow-hidden rounded-lg border border-border bg-card text-[12px]"
       >
         <button
@@ -374,9 +638,16 @@ async function copyContent() {
           </div>
           <div v-if="tc.result" class="flex gap-2">
             <span class="text-muted-foreground">结果</span>
-            <span>{{ tc.result }}</span>
+            <!-- T21：注册渲染器优先（如 local_nl2sql → SqlResultTable），否则文本 -->
+            <component
+              v-if="toolRendererFor(tc.name)"
+              :is="toolRendererFor(tc.name)!"
+              :result="parseToolResult(tc.result)"
+            />
+            <span v-else>{{ tc.result }}</span>
           </div>
         </div>
+      </div>
       </div>
 
       <!-- 错误 -->
@@ -467,7 +738,7 @@ async function copyContent() {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
 }
-:global([data-theme='dark']) .md-body :deep(.md-inline-code) {
+:global(.ai-theme-dark) .md-body :deep(.md-inline-code) {
   background: rgb(255 255 255 / 10%);
 }
 .md-body :deep(.md-code-wrap) {
@@ -503,5 +774,80 @@ async function copyContent() {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
   line-height: 18px;
+}
+/* T6-U1：复制按钮反馈态 */
+.md-body :deep(.md-code-copy.md-copied) {
+  color: hsl(var(--primary));
+}
+/* T6-U1：hljs token 自配色（不引入 hljs 主题 CSS，避免与明暗主题冲突） */
+.md-body :deep(.hljs-keyword),
+.md-body :deep(.hljs-selector-tag),
+.md-body :deep(.hljs-literal),
+.md-body :deep(.hljs-section) {
+  color: #a626a4;
+}
+.md-body :deep(.hljs-string),
+.md-body :deep(.hljs-attr),
+.md-body :deep(.hljs-addition) {
+  color: #50a14f;
+}
+.md-body :deep(.hljs-number),
+.md-body :deep(.hljs-symbol),
+.md-body :deep(.hljs-bullet),
+.md-body :deep(.hljs-meta) {
+  color: #986801;
+}
+.md-body :deep(.hljs-title),
+.md-body :deep(.hljs-name),
+.md-body :deep(.hljs-function .hljs-title),
+.md-body :deep(.hljs-title.function_) {
+  color: #4078f2;
+}
+.md-body :deep(.hljs-comment),
+.md-body :deep(.hljs-quote),
+.md-body :deep(.hljs-deletion) {
+  color: #a0a1a7;
+  font-style: italic;
+}
+:global(.ai-theme-dark) .md-body :deep(.hljs-keyword),
+:global(.ai-theme-dark) .md-body :deep(.hljs-selector-tag),
+:global(.ai-theme-dark) .md-body :deep(.hljs-literal),
+:global(.ai-theme-dark) .md-body :deep(.hljs-section) {
+  color: #c678dd;
+}
+:global(.ai-theme-dark) .md-body :deep(.hljs-string),
+:global(.ai-theme-dark) .md-body :deep(.hljs-attr),
+:global(.ai-theme-dark) .md-body :deep(.hljs-addition) {
+  color: #98c379;
+}
+:global(.ai-theme-dark) .md-body :deep(.hljs-number),
+:global(.ai-theme-dark) .md-body :deep(.hljs-symbol),
+:global(.ai-theme-dark) .md-body :deep(.hljs-bullet),
+:global(.ai-theme-dark) .md-body :deep(.hljs-meta) {
+  color: #d19a66;
+}
+:global(.ai-theme-dark) .md-body :deep(.hljs-title),
+:global(.ai-theme-dark) .md-body :deep(.hljs-name),
+:global(.ai-theme-dark) .md-body :deep(.hljs-function .hljs-title),
+:global(.ai-theme-dark) .md-body :deep(.hljs-title.function_) {
+  color: #61afef;
+}
+:global(.ai-theme-dark) .md-body :deep(.hljs-comment),
+:global(.ai-theme-dark) .md-body :deep(.hljs-quote),
+:global(.ai-theme-dark) .md-body :deep(.hljs-deletion) {
+  color: #7f848e;
+}
+
+/* T14-U13：思考流光 */
+.shimmer-text {
+  background: linear-gradient(90deg, currentColor 25%, hsl(var(--primary)) 50%, currentColor 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: md-shimmer 1.8s linear infinite;
+}
+@keyframes md-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
 </style>

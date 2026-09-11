@@ -23,10 +23,14 @@ import {
   stopGenerate,
   summarizeContext,
   toChatMessage,
+  toggleSessionPinned,
   type ChatSessionVO,
   type PageProfileVO,
 } from '../../api/chat';
+import { aiRequestClient } from '../../api/client';
+import { resumeRun } from '../../api/chat';
 import { listAgents, type AgentVO } from '../../api/agent';
+import { updateToolApprovalPolicy } from '../../api/mcp';
 import { listProviders } from '../../api/provider';
 
 import MessageItem from '../../components/message-item.vue';
@@ -72,6 +76,11 @@ const perceptionEnabled = computed(() => perceptionOn.value);
 
 const PlusIcon = createIconifyIcon('lucide:plus');
 const HistoryIcon = createIconifyIcon('lucide:history');
+const ListIcon = createIconifyIcon('lucide:list-checks');
+const PinIcon = createIconifyIcon('lucide:pin');
+const PinOffIcon = createIconifyIcon('lucide:pin-off');
+const PencilIcon = createIconifyIcon('lucide:pencil');
+const SearchIcon = createIconifyIcon('lucide:search');
 const TrashIcon = createIconifyIcon('lucide:trash-2');
 const ChevronIcon = createIconifyIcon('lucide:chevron-left');
 const BotIcon = createIconifyIcon('lucide:bot');
@@ -86,6 +95,85 @@ const activeSession = computed(
 
 const showHistory = ref(false);
 const loadingSessions = ref(false);
+
+// ===== T15：会话列表（搜索 / 置顶 / 重命名 / 分组 / 时间戳） =====
+const sessionKeyword = ref('');
+const renamingSession = ref<ChatSession | null>(null);
+const renameText = ref('');
+
+const filteredSessions = computed(() => {
+  const kw = sessionKeyword.value.trim().toLowerCase();
+  const list = kw
+    ? sessions.value.filter((s) => s.title.toLowerCase().includes(kw))
+    : sessions.value.slice();
+  // 置顶优先，其余按更新时间倒序
+  return list.sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    return b.updatedAt - a.updatedAt;
+  });
+});
+
+const sessionGroups = computed(() => {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const groups: Array<{ label: string; items: ChatSession[] }> = [];
+  const pinned = filteredSessions.value.filter((s) => s.pinned);
+  const today = filteredSessions.value.filter(
+    (s) => !s.pinned && s.updatedAt >= todayStart.getTime(),
+  );
+  const earlier = filteredSessions.value.filter(
+    (s) => !s.pinned && s.updatedAt < todayStart.getTime(),
+  );
+  if (pinned.length) groups.push({ label: '置顶', items: pinned });
+  if (today.length) groups.push({ label: '今天', items: today });
+  if (earlier.length) groups.push({ label: '更早', items: earlier });
+  return groups;
+});
+
+function fmtSessionTime(ts: number): string {
+  const d = new Date(ts);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (d.toDateString() === new Date().toDateString()) return hm;
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function togglePin(s: ChatSession) {
+  const next = !s.pinned;
+  s.pinned = next; // 乐观更新
+  try {
+    await toggleSessionPinned(s.id, next);
+  } catch {
+    s.pinned = !next; // 失败回滚
+  }
+}
+
+function openRename(s: ChatSession) {
+  renamingSession.value = s;
+  renameText.value = s.title;
+}
+
+async function confirmRename() {
+  const target = renamingSession.value;
+  const title = renameText.value.trim();
+  if (!target || !title) {
+    renamingSession.value = null;
+    return;
+  }
+  const old = target.title;
+  target.title = title; // 乐观更新
+  renamingSession.value = null;
+  try {
+    await saveSession({
+      id: target.id,
+      title,
+      agentId: target.agentId,
+      modelId: target.modelId,
+      pinned: target.pinned,
+    });
+  } catch {
+    target.title = old; // 失败回滚
+  }
+}
 
 // ===== 页面感知摘要（空会话时展示，LLM 一句话总结）=====
 // PP4：感知管线接管 DOM 采集；洞察来自快照（captured 事件驱动，实时于旧轮询）
@@ -591,6 +679,31 @@ async function stopIfGenerating(sessionId: string) {
 
 // ===== 流式对话（真实 SSE API） =====
 const loading = ref(false);
+// T6-U3：停止中相位（点击停止 → done/error 收尾前，停止按钮禁用防重复点击）
+const stopping = ref(false);
+
+// ===== T10：任务面板 =====
+const showTasks = ref(false);
+const tasks = ref<import('../../types').TaskSummary[]>([]);
+async function fetchTasks() {
+  if (!activeId.value) return;
+  try {
+    const res = await aiRequestClient.get<{ id: string; subject: string; state: string }[]>(
+      `/chat/sessions/${activeId.value}/tasks`,
+    );
+    tasks.value = (res ?? []).map((t) => ({
+      id: String(t.id),
+      subject: String(t.subject ?? ''),
+      state: (t.state as import('../../types').TaskSummary['state']) ?? 'pending',
+    }));
+  } catch {
+    tasks.value = [];
+  }
+}
+function toggleTasks() {
+  showTasks.value = !showTasks.value;
+  if (showTasks.value) void fetchTasks();
+}
 let abortController: AbortController | null = null;
 const scrollRef = ref<HTMLDivElement>();
 
@@ -738,6 +851,9 @@ async function onSend(text: string) {
       (chunk: StreamChunk) => {
         switch (chunk.type) {
           case 'reasoning': {
+            if (!reactiveAssistant.reasoningStartTs) {
+              reactiveAssistant.reasoningStartTs = Date.now();
+            }
             reactiveAssistant.reasoning = (reactiveAssistant.reasoning ?? '') + (chunk.text ?? '');
             break;
           }
@@ -745,13 +861,27 @@ async function onSend(text: string) {
             if (reactiveAssistant.status === 'pending') {
               reactiveAssistant.status = 'streaming';
             }
+            // T14：思考结束（正文开始）→ 固化思考耗时
+            if (reactiveAssistant.reasoningStartTs && !reactiveAssistant.reasoningMs) {
+              reactiveAssistant.reasoningMs = Date.now() - reactiveAssistant.reasoningStartTs;
+            }
             reactiveAssistant.content += chunk.text ?? '';
+            // T14：有实际内容则清除超限 Alert（总结成功即无需人工继续）
+            reactiveAssistant.exceedMaxIters = undefined;
             scrollToBottom();
             break;
           }
           case 'replace': {
             // 后端正则脱敏后替换全部内容（安全兜底）
             reactiveAssistant.content = chunk.text ?? '';
+            reactiveAssistant.exceedMaxIters = undefined;
+            scrollToBottom();
+            break;
+          }
+          case 'exceed_max_iters': {
+            // T14-U18：达到最大迭代（琥珀 Alert + 「继续」按钮）
+            reactiveAssistant.exceedMaxIters =
+              typeof chunk.iters === 'number' ? chunk.iters : undefined;
             scrollToBottom();
             break;
           }
@@ -866,13 +996,50 @@ async function onSend(text: string) {
     }
   } finally {
     loading.value = false;
+    stopping.value = false;
     abortController = null;
+    void fetchTasks();
     scrollToBottom(true);
   }
 }
 
+/** T20：授权并始终允许——审批通过 + 权限规则写 never（后续不再询问） */
+async function onToolAlwaysAllow(payload: {
+  approvalId: string;
+  serverName?: string;
+  toolName: string;
+}) {
+  await respondToolApproval(activeId.value!, payload.approvalId, true).catch(() => {});
+  if (payload.serverName) {
+    await updateToolApprovalPolicy(payload.serverName, payload.toolName, 'never').catch(() => {});
+  }
+}
+
 function onStop() {
+  if (stopping.value) return;
+  stopping.value = true;
   abortController?.abort();
+  // 兜底：异常路径未进 finally 时 3s 后自动复位，避免按钮永久禁用
+  setTimeout(() => {
+    stopping.value = false;
+  }, 3000);
+}
+
+/** T14-U18/T27：超限「继续」——优先恢复挂起运行，无挂起则以续写指令发起新一轮 */
+async function onContinueRun() {
+  if (!activeId.value) return;
+  try {
+    const vo = await resumeRun(activeId.value);
+    const m = toChatMessage(vo);
+    const sess = sessions.value.find((s) => s.id === activeId.value);
+    if (sess) {
+      sess.messages.push(m);
+      sess.tokenCount += m.content.length;
+    }
+    scrollToBottom(true);
+  } catch {
+    await onSend('请继续完成上面的回答');
+  }
 }
 
 // ===== Diff 审批处理 =====
@@ -1034,7 +1201,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0">
+  <div class="relative flex h-full min-h-0">
     <!-- 会话历史侧栏 -->
     <transition name="slide-fade">
       <aside
@@ -1059,45 +1226,148 @@ onUnmounted(() => {
             新建会话
           </button>
         </div>
+        <!-- T15：会话搜索 -->
+        <div class="px-2 pb-2">
+          <div
+            class="flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2"
+          >
+            <component
+              :is="SearchIcon"
+              class="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
+            />
+            <input
+              v-model="sessionKeyword"
+              placeholder="搜索会话"
+              class="h-full w-full border-0 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/60"
+            />
+          </div>
+        </div>
         <div class="min-h-0 flex-1 overflow-auto px-1.5 pb-2">
-          <div
-            v-if="loadingSessions"
-            class="px-2 py-3 text-center text-[11px] text-muted-foreground"
-          >
-            加载中...
+          <!-- T15：骨架屏（替代"加载中..."文本） -->
+          <div v-if="loadingSessions" class="space-y-2.5 px-1 py-2">
+            <div v-for="i in 4" :key="i" class="animate-pulse">
+              <div class="mb-1.5 h-3 w-3/4 rounded bg-accent"></div>
+              <div class="h-2.5 w-1/2 rounded bg-accent"></div>
+            </div>
           </div>
-          <div
-            v-for="s in sessions"
-            :key="s.id"
-            role="button"
-            tabindex="0"
-            class="group relative mb-1 w-full cursor-pointer rounded-md px-2 py-2 text-left text-[12px] transition-colors"
-            :class="
-              s.id === activeId
-                ? 'bg-primary/10 text-primary'
-                : 'hover:bg-accent'
-            "
-            @click="switchSession(s.id)"
-            @keydown.enter="switchSession(s.id)"
-          >
-            <div class="truncate font-medium">
-              {{ (s.id === activeId && insightLoading && !insightSummary) ? '正在感知内容...' : s.title }}
+          <template v-else>
+            <div v-for="group in sessionGroups" :key="group.label" class="mb-1">
+              <div
+                class="px-2 py-1 text-[10px] tracking-wide text-muted-foreground"
+              >
+                {{ group.label }} · {{ group.items.length }}
+              </div>
+              <div
+                v-for="s in group.items"
+                :key="s.id"
+                role="button"
+                tabindex="0"
+                class="group relative mb-1 w-full cursor-pointer rounded-md px-2 py-2 text-left text-[12px] transition-colors"
+                :class="
+                  s.id === activeId
+                    ? 'bg-primary/10 text-primary'
+                    : 'hover:bg-accent'
+                "
+                @click="switchSession(s.id)"
+                @keydown.enter="switchSession(s.id)"
+              >
+                <div class="flex items-center justify-between gap-1">
+                  <div class="truncate font-medium">
+                    {{
+                      s.id === activeId && insightLoading && !insightSummary
+                        ? '正在感知内容...'
+                        : s.title
+                    }}
+                  </div>
+                  <!-- T15：mono 时间戳（hover 时让位给操作簇） -->
+                  <span
+                    class="flex-shrink-0 font-mono text-[10px] text-muted-foreground group-hover:hidden"
+                  >
+                    {{ fmtSessionTime(s.updatedAt) }}
+                  </span>
+                </div>
+                <div class="mt-0.5 truncate text-[10px] text-muted-foreground">
+                  {{ s.messages.length }} 条 ·
+                  {{ (s.tokenCount / 1000).toFixed(1) }}k tokens
+                </div>
+                <!-- T15：hover 操作簇（置顶/重命名/删除） -->
+                <div
+                  class="absolute right-1 top-1.5 hidden items-center gap-0.5 group-hover:flex"
+                >
+                  <button
+                    type="button"
+                    class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                    :title="s.pinned ? '取消置顶' : '置顶'"
+                    @click.stop="togglePin(s)"
+                  >
+                    <component
+                      :is="s.pinned ? PinIcon : PinOffIcon"
+                      class="h-3 w-3"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                    title="重命名"
+                    @click.stop="openRename(s)"
+                  >
+                    <component :is="PencilIcon" class="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                    title="删除"
+                    @click.stop="deleteSession(s.id)"
+                  >
+                    <component :is="TrashIcon" class="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
             </div>
-            <div class="mt-0.5 truncate text-[10px] text-muted-foreground">
-              {{ s.messages.length }} 条 ·
-              {{ (s.tokenCount / 1000).toFixed(1) }}k tokens
-            </div>
-            <button
-              type="button"
-              class="absolute right-1.5 top-1.5 hidden h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-500 group-hover:flex"
-              @click.stop="deleteSession(s.id)"
+            <div
+              v-if="!sessionGroups.length"
+              class="px-2 py-3 text-center text-[11px] text-muted-foreground"
             >
-              <component :is="TrashIcon" class="h-3 w-3" />
-            </button>
-          </div>
+              无匹配会话
+            </div>
+          </template>
         </div>
       </aside>
     </transition>
+
+    <!-- T15：重命名对话框（自绘，风格对齐抽屉） -->
+    <div
+      v-if="renamingSession"
+      class="absolute inset-0 z-20 flex items-center justify-center bg-black/30"
+      @click.self="renamingSession = null"
+    >
+      <div
+        class="w-[240px] rounded-lg border border-border bg-background p-3 shadow-lg"
+      >
+        <div class="mb-2 text-[12px] font-medium">重命名会话</div>
+        <input
+          v-model="renameText"
+          maxlength="100"
+          class="mb-3 h-8 w-full rounded-md border border-border bg-background px-2 text-[12px] outline-none focus:border-primary/60"
+          @keydown.enter="confirmRename"
+          @keydown.esc="renamingSession = null"
+        />
+        <div class="flex justify-end gap-1.5">
+          <button
+            class="h-7 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-accent"
+            @click="renamingSession = null"
+          >
+            取消
+          </button>
+          <button
+            class="h-7 rounded-md bg-primary px-2.5 text-[12px] text-primary-foreground hover:bg-primary/90"
+            @click="confirmRename"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- 主区 -->
     <div class="flex min-w-0 flex-1 flex-col">
@@ -1105,6 +1375,15 @@ onUnmounted(() => {
       <div
         class="flex h-[38px] flex-shrink-0 items-center gap-2 border-b border-border bg-background px-3"
       >
+        <button
+          class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          :class="showTasks ? 'bg-accent text-foreground' : ''"
+          aria-label="任务"
+          title="任务列表"
+          @click="toggleTasks"
+        >
+          <component :is="ListIcon" class="h-4 w-4" />
+        </button>
         <button
           class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           :class="showHistory ? 'bg-accent text-foreground' : ''"
@@ -1328,21 +1607,67 @@ onUnmounted(() => {
         </template>
         <template v-else>
           <MessageItem
-            v-for="msg in messages"
+            v-for="(msg, mi) in messages"
             :key="msg.id"
             :message="msg"
+            :prev-created-at="mi > 0 ? messages[mi - 1]?.createdAt : undefined"
             class="group"
             @retry="onRetry"
             @diff-action="onDiffAction"
             @tool-approval="onToolApproval"
+            @tool-always-allow="onToolAlwaysAllow"
             @feedback="onFeedback"
+            @continue-run="onContinueRun"
           />
         </template>
+      </div>
+
+      <!-- T10：任务面板（可收起横条） -->
+      <div
+        v-if="showTasks"
+        class="flex flex-shrink-0 flex-col border-t border-border bg-background-deep px-3 py-2"
+      >
+        <div class="mb-1 flex items-center justify-between">
+          <span class="text-[11px] font-medium">任务列表</span>
+          <button
+            class="text-[10px] text-muted-foreground hover:text-foreground"
+            @click="showTasks = false"
+          >
+            收起
+          </button>
+        </div>
+        <div v-if="!tasks.length" class="py-1 text-[11px] text-muted-foreground">
+          暂无任务——可让 AI 通过 task_create 工具创建
+        </div>
+        <div
+          v-for="t in tasks"
+          :key="t.id"
+          class="flex items-center gap-2 py-0.5 text-[12px]"
+        >
+          <span
+            class="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+            :class="{
+              'bg-emerald-500': t.state === 'completed',
+              'bg-blue-500 animate-pulse': t.state === 'in_progress',
+              'bg-muted-foreground/50': t.state === 'pending',
+            }"
+          />
+          <span
+            class="min-w-0 flex-1 truncate"
+            :class="t.state === 'completed' ? 'text-muted-foreground line-through' : ''"
+          >
+            {{ t.subject }}
+          </span>
+          <span class="flex-shrink-0 font-mono text-[10px] text-muted-foreground">
+            {{ t.state }}
+          </span>
+        </div>
       </div>
 
       <!-- 输入区 -->
       <InputArea
         :loading="loading"
+        :stopping="stopping"
         :context="context"
         :model-id="activeSession?.modelId"
         :model-options="modelOptions"

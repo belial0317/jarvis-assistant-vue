@@ -1,102 +1,110 @@
 /**
- * 极简 Markdown 渲染器（MVP 用，零依赖）。
+ * Markdown 渲染器（T6-U1：tasks-2609-1020-20）。
  *
- * 仅处理 AI 回复中常见语法：围栏代码块、行内代码、加粗、无序列表、换行。
- * 后续接入后端后可替换为 md-editor-v3 等完整方案。
+ * markdown-it + highlight.js 语法高亮 + DOMPurify 消毒：
+ * - 支持标题/表格/链接/有序无序列表/引用/图片/围栏代码块（语言标签 + 复制按钮）；
+ * - 复制按钮为静态标记，点击行为由 message-item.vue 的事件委托实现（.md-code-copy）；
+ * - 输出经 DOMPurify 消毒，v-html 消费安全；
+ * - 顶层类名（md-code-wrap/md-code-head/md-code-lang/md-code-copy/md-code/
+ *   md-inline-code/md-ul）与旧版保持一致，既有样式零迁移。
  *
- * 输入为可信的 Mock 文本，已做 HTML 转义，避免 XSS。
+ * ⚠️ 输入是模型输出（不可信来源），禁止绕过 sanitize 直接 v-html。
  */
+import DOMPurify from 'dompurify';
+import hljs from 'highlight.js';
+import MarkdownIt from 'markdown-it';
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+  highlight: (str, lang) => {
+    const langNorm = (lang || '').trim().toLowerCase();
+    try {
+      if (langNorm && hljs.getLanguage(langNorm)) {
+        return hljs.highlight(str, { language: langNorm, ignoreIllegals: true }).value;
+      }
+    } catch {
+      // 高亮失败退回纯转义（下方 renderer 兜底）
+    }
+    return '';
+  },
+});
 
-function renderInline(s: string): string {
-  // 行内代码 `xxx`
-  let out = s.replace(/`([^`]+)`/g, (_, code) => {
-    return `<code class="md-inline-code">${escapeHtml(code)}</code>`;
-  });
-  // 加粗 **xxx**
-  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  return out;
-}
+/** 围栏代码块：保留旧版 md-code-* 结构（语言标签 + 复制按钮 + 高亮 code） */
+md.renderer.rules.fence = (tokens, idx) => {
+  const token = tokens[idx]!;
+  const lang = (token.info || '').trim().split(/\s+/)[0] || 'text';
+  const langNorm = lang.toLowerCase();
+  let body: string;
+  try {
+    if (langNorm !== 'text' && hljs.getLanguage(langNorm)) {
+      body = hljs.highlight(token.content, { language: langNorm, ignoreIllegals: true }).value;
+    } else {
+      body = md.utils.escapeHtml(token.content);
+    }
+  } catch {
+    body = md.utils.escapeHtml(token.content);
+  }
+  return (
+    `<div class="md-code-wrap">` +
+    `<div class="md-code-head"><span class="md-code-lang">${md.utils.escapeHtml(lang)}</span>` +
+    `<button type="button" class="md-code-copy">复制</button></div>` +
+    `<pre class="md-code"><code class="hljs">${body}</code></pre>` +
+    `</div>`
+  );
+};
+
+/** 行内代码：保留旧版 md-inline-code 类名 */
+md.renderer.rules.code_inline = (tokens, idx) => {
+  return `<code class="md-inline-code">${md.utils.escapeHtml(tokens[idx]!.content)}</code>`;
+};
+
+/** markdown-it 渲染规则签名（@types/markdown-it 未给 rules 键提供上下文类型，显式声明） */
+type MdRenderFn = (
+  tokens: any[],
+  idx: number,
+  options: any,
+  env: any,
+  self: { renderToken: (tokens: any[], idx: number, options: any) => string },
+) => string;
+
+/** 链接：新窗口打开 + 安全 rel */
+const defaultLinkOpen = md.renderer.rules.link_open as MdRenderFn | undefined;
+md.renderer.rules.link_open = ((tokens, idx, options, env, self) => {
+  tokens[idx]!.attrSet('target', '_blank');
+  tokens[idx]!.attrSet('rel', 'noopener noreferrer');
+  if (defaultLinkOpen) {
+    return defaultLinkOpen(tokens, idx, options, env, self);
+  }
+  return self.renderToken(tokens, idx, options);
+}) as MdRenderFn;
+
+/** 无序列表：补旧版 md-ul 类名（样式沿用） */
+const defaultBulletListOpen = md.renderer.rules.bullet_list_open as
+  | MdRenderFn
+  | undefined;
+md.renderer.rules.bullet_list_open = ((tokens, idx, options, env, self) => {
+  tokens[idx]!.attrJoin('class', 'md-ul');
+  if (defaultBulletListOpen) {
+    return defaultBulletListOpen(tokens, idx, options, env, self);
+  }
+  return self.renderToken(tokens, idx, options);
+}) as MdRenderFn;
+
+/** 消毒白名单：常规 markdown 输出 + hljs 的 span/code 结构 */
+const PURIFY_CONFIG = {
+  ALLOWED_ATTR: ['class', 'href', 'src', 'alt', 'title', 'target', 'rel', 'type'],
+  ALLOWED_TAGS: [
+    'a', 'abbr', 'b', 'blockquote', 'br', 'button', 'caption', 'code', 'dd', 'del', 'div', 'dl',
+    'dt', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img',
+    'ins', 'kbd', 'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'small', 'span', 'strong', 'sub',
+    'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul',
+  ],
+};
 
 export function renderMarkdown(src: string): string {
   if (!src) return '';
-
-  const blocks: string[] = [];
-  const lines = src.split('\n');
-
-  let i = 0;
-  let para: string[] = [];
-  let list: string[] = [];
-
-  const flushPara = () => {
-    if (para.length > 0) {
-      blocks.push(`<p>${renderInline(escapeHtml(para.join(' ')))}</p>`);
-      para = [];
-    }
-  };
-  const flushList = () => {
-    if (list.length > 0) {
-      blocks.push(`<ul class="md-ul">${list.map((l) => `<li>${renderInline(escapeHtml(l))}</li>`).join('')}</ul>`);
-      list = [];
-    }
-  };
-
-  while (i < lines.length) {
-    const line = lines[i]!;
-
-    // 围栏代码块
-    const fence = line.match(/^```(\w+)?\s*$/);
-    if (fence) {
-      flushPara();
-      flushList();
-      const lang = fence[1] ?? '';
-      const code: string[] = [];
-      i += 1;
-      while (i < lines.length && !/^```\s*$/.test(lines[i]!)) {
-        code.push(lines[i]!);
-        i += 1;
-      }
-      i += 1; // 跳过结束 ```
-      blocks.push(
-        `<div class="md-code-wrap">` +
-          `<div class="md-code-head"><span class="md-code-lang">${escapeHtml(lang || 'text')}</span><span class="md-code-copy">复制</span></div>` +
-          `<pre class="md-code"><code>${escapeHtml(code.join('\n'))}</code></pre>` +
-          `</div>`,
-      );
-      continue;
-    }
-
-    // 无序列表
-    const li = line.match(/^\s*[-*]\s+(.*)$/);
-    if (li) {
-      flushPara();
-      list.push(li[1]!);
-      i += 1;
-      continue;
-    }
-
-    // 空行
-    if (line.trim() === '') {
-      flushPara();
-      flushList();
-      i += 1;
-      continue;
-    }
-
-    flushList();
-    para.push(line.trim());
-    i += 1;
-  }
-  flushPara();
-  flushList();
-
-  return blocks.join('');
+  const raw = md.render(src);
+  return DOMPurify.sanitize(raw, PURIFY_CONFIG);
 }

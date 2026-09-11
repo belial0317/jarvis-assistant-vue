@@ -109,10 +109,18 @@
   color-scheme: light;
 }
 
-/* ============= 深色主题覆盖（在 html 上加 .dark 即可切换） ============= */
+/* ============= 深色主题覆盖 =============
+ * 三种触发方式：
+ *   1. 宿主 html 挂 .dark（T6-U2 auto 模式下组件自动跟随）
+ *   2. 组件根被 .ai-theme-dark 包裹（component.vue 依 theme prop 自动添加）
+ *   3. :root.dark 等价于 html 自身带 .dark
+ * 注意：变量作用域在命中元素子树内，不污染宿主 :root 全局同名变量。
+ * （修复：原 `.dark :root` 选择器永不命中，已移除）
+ */
 
 .dark,
-.dark :root {
+:root.dark,
+.ai-theme-dark {
   /* 主背景（侧边栏/抽屉底色） */
   --background: 220 14% 11%;
   --background-deep: 222 14% 9%;
