@@ -37,6 +37,21 @@ export function resetAiBaseUrl(): void {
 
 const AI_API_KEY_STORAGE_KEY = 'ai_assistant_api_key';
 
+// 宿主/门户统一下发的 Key 仅驻内存：不落 localStorage（防后续会话/他人读取）、
+// 不进设置模块回显（用户裁决：默认不显示 sk Key）。宿主每次挂载都会经 syncParams 重下发。
+let hostAiApiKey: null | string = null;
+
+/** 读取宿主/门户统一下发的 API Key（内存驻留，未下发返回 null） */
+export function getHostAiApiKey(): null | string {
+  return hostAiApiKey;
+}
+
+/** 设置宿主/门户统一下发的 API Key（空字符串 / 非字符串视为清除；仅内存，不持久化） */
+export function setHostAiApiKey(key: string): void {
+  const trimmed = key.trim();
+  hostAiApiKey = trimmed ? trimmed : null;
+}
+
 /** 读取用户在设置页配置的 API Key（未配置返回 null） */
 export function getAiApiKey(): null | string {
   if (typeof localStorage === 'undefined') return null;
@@ -110,10 +125,12 @@ function resolveBaseURL(): string {
 function buildHeaders(custom?: Record<string, string>): Record<string, string> {
   const aiConfig = useAiAssistantConfig();
   const headers: Record<string, string> = { ...custom };
-  // 鉴权链：宿主注入 config.auth 优先；回落设置模块本地 Key。
-  // 必须双通道：异步回调（点击 / await 之后）里 inject 拿到的是宿主全局兜底配置，
-  // 该配置往往没有 auth——此时设置页配置的 Key（门户运营平台分配）是唯一凭证。
-  const token = aiConfig.auth?.getToken?.() ?? getAiApiKey();
+  // 鉴权链：宿主注入 config.auth 优先；其次宿主 syncParams 下发的内存 Key；
+  // 最后设置模块本地 Key。
+  // 必须多通道：异步回调（点击 / await 之后）里 inject 拿到的是宿主全局兜底配置，
+  // 该配置往往没有 auth——此时宿主下发 Key / 设置页本地 Key 是唯一凭证。
+  const token =
+    aiConfig.auth?.getToken?.() ?? getHostAiApiKey() ?? getAiApiKey();
   const authHeader = formatToken(token);
   if (authHeader) {
     headers.Authorization = authHeader;

@@ -43,7 +43,23 @@ export function getMcpServer(id: string) {
 }
 
 export function saveMcpServer(dto: McpSaveDTO) {
-  return aiRequestClient.post<string>(McpApi.SAVE, dto);
+  // 后端 DTO 复杂字段均为 JSON 字符串（args: string[] / env·headers: Array<{key,value}> /
+  // configuration·authentication: 对象），组件内对象形态在此统一序列化（与 knowledge.ts 同模式）
+  const payload = {
+    ...dto,
+    args: Array.isArray(dto.args) ? JSON.stringify(dto.args) : dto.args,
+    env: Array.isArray(dto.env) ? JSON.stringify(dto.env) : dto.env,
+    headers: Array.isArray(dto.headers) ? JSON.stringify(dto.headers) : dto.headers,
+    configuration:
+      dto.configuration != null && typeof dto.configuration === 'object'
+        ? JSON.stringify(dto.configuration)
+        : dto.configuration,
+    authentication:
+      dto.authentication != null && typeof dto.authentication === 'object'
+        ? JSON.stringify(dto.authentication)
+        : dto.authentication,
+  };
+  return aiRequestClient.post<string>(McpApi.SAVE, payload);
 }
 
 export function deleteMcpServer(id: string) {

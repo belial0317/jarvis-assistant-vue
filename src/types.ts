@@ -9,6 +9,7 @@
 export type AIModuleType =
   | 'audit'
   | 'chat'
+  | 'schedule'
   | 'skill'
   | 'agent'
   | 'mcp'
@@ -111,6 +112,8 @@ export interface ChatMessage {
   diffs?: DiffPatch[];
   /** Agent 运行时状态（仅 Agent 模式下的助手消息有值） */
   agentStatus?: AgentRunStatus;
+  /** 方案B：默认模式意图路由结果（仅流式期存在） */
+  agentRouted?: { agentId: string; agentName: string; method: 'RULE' | 'LLM' };
   /** NL2SQL 查询结果（仅 NL2SQL 技能触发的助手消息有值，前端渲染表格/图表，sql 字段已脱敏） */
   sqlResult?: import('./api/nl2sql').SqlResultVO;
   /** RAG 检索引用列表（仅命中知识库的助手消息有值，P0 仅流式期存在不持久化） */
@@ -143,6 +146,8 @@ export interface ChatSession {
   tokenCount: number;
   createdAt: number;
   updatedAt: number;
+  /** 会话消息条数（后端列表统计；未拉取详情时为准） */
+  messageCount?: number;
 }
 
 /** 供应商类型 */
@@ -215,6 +220,7 @@ export interface StreamChunk {
     | 'error'
     | 'exceed_max_iters' // ⏳ T8 超过最大迭代
     | 'interrupted' // ⏳ T8 协作式中断确认
+    | 'agent_routed' // 方案B：默认模式意图路由
     | 'nl2sql_result'
     | 'reasoning'
     | 'references'
@@ -243,6 +249,8 @@ export interface StreamChunk {
   diff?: DiffPatch;
   /** agent_status: Agent 运行时状态 */
   agentStatus?: AgentRunStatus;
+  /** agent_routed: 默认模式意图路由结果（方案B） */
+  agentRouted?: { agentId: string; agentName: string; method: 'RULE' | 'LLM' };
   /** nl2sql_result: NL2SQL 查询结果（前端渲染表格/图表，sql 字段已脱敏为 null） */
   sqlResult?: import('./api/nl2sql').SqlResultVO;
   /** references: RAG 检索引用列表（先于 delta/done 推送，渲染"参考来源"角标） */
@@ -508,6 +516,7 @@ export interface Agent {
   /** 头像 emoji 或 iconify 名称 */
   avatar: string;
   description: string;
+  routeKeywords?: string;
   systemPrompt: string;
   /** 敏感信息脱敏规则（聊天上下文 / 用户消息中命中的敏感信息按规则脱敏） */
   desensitizeRules: DesensitizeRule[];

@@ -29,6 +29,8 @@ export interface ChatSessionVO {
   tokenCount: number;
   createdAt: number;
   updatedAt: number;
+  /** 会话消息条数（后端列表统计） */
+  messageCount?: number;
 }
 
 /** 后端返回的 ChatMessageVO */

@@ -77,6 +77,19 @@ const perceptionEnabled = computed(() => perceptionOn.value);
 const PlusIcon = createIconifyIcon('lucide:plus');
 const HistoryIcon = createIconifyIcon('lucide:history');
 const ListIcon = createIconifyIcon('lucide:list-checks');
+const NetworkIcon = createIconifyIcon('lucide:network');
+/** 方案 C-1：监督者常驻化——多专家协作开关（绑定/解绑智能路由中枢） */
+const SUPERVISOR_AGENT_NAME = '智能路由中枢';
+const supervisorAgentId = computed(() => agents.value.find((a) => a.name === SUPERVISOR_AGENT_NAME)?.id);
+const multiExpertActive = computed(() => !!activeSession.value?.agentId && activeSession.value.agentId === supervisorAgentId.value);
+function toggleMultiExpert() {
+  if (!activeSession.value) return;
+  if (multiExpertActive.value) {
+    clearAgent(); // 降级回自动路由
+  } else if (supervisorAgentId.value) {
+    onAgentChange(supervisorAgentId.value); // 升级为监督者编排
+  }
+}
 const PinIcon = createIconifyIcon('lucide:pin');
 const PinOffIcon = createIconifyIcon('lucide:pin-off');
 const PencilIcon = createIconifyIcon('lucide:pencil');
@@ -98,6 +111,8 @@ const loadingSessions = ref(false);
 
 // ===== T15：会话列表（搜索 / 置顶 / 重命名 / 分组 / 时间戳） =====
 const sessionKeyword = ref('');
+const routedAgentName = ref('');
+const routedMethod = ref('');
 const renamingSession = ref<ChatSession | null>(null);
 const renameText = ref('');
 
@@ -132,6 +147,7 @@ const sessionGroups = computed(() => {
 
 function fmtSessionTime(ts: number): string {
   const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '—'; // 防御：非法时间戳不输出 NaN
   const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   if (d.toDateString() === new Date().toDateString()) return hm;
   return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -576,9 +592,13 @@ function voToSession(vo: ChatSessionVO): ChatSession {
     messages: [],
     context: [],
     pinned: vo.pinned,
-    tokenCount: vo.tokenCount ?? 0,
-    createdAt: vo.createdAt,
-    updatedAt: vo.updatedAt,
+    // 后端 write-numbers-as-strings 会把 Long（时间戳/tokenCount）序列化为字符串，
+    // 直接透传会导致 new Date("1789…") = Invalid Date → 会话历史显示 "NaN-NaN"（缺陷根因），
+    // 排序比较同样失准——统一归一化为 number
+    tokenCount: Number(vo.tokenCount ?? 0) || 0,
+    createdAt: Number(vo.createdAt ?? 0) || 0,
+    updatedAt: Number(vo.updatedAt ?? 0) || 0,
+    messageCount: Number(vo.messageCount ?? 0) || 0,
   };
 }
 
@@ -928,6 +948,14 @@ async function onSend(text: string) {
                 tc.status = chunk.toolCall.status;
                 tc.duration = chunk.toolCall.duration;
               }
+            }
+            break;
+          }
+          case 'agent_routed': {
+            // 方案 B：默认模式意图路由结果（RULE=规则层 / LLM=分类层）
+            if (chunk.agentRouted) {
+              routedAgentName.value = chunk.agentRouted.agentName || '';
+              routedMethod.value = chunk.agentRouted.method || '';
             }
             break;
           }
@@ -1287,7 +1315,7 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <div class="mt-0.5 truncate text-[10px] text-muted-foreground">
-                  {{ s.messages.length }} 条 ·
+                  {{ s.messageCount ?? s.messages.length }} 条 ·
                   {{ (s.tokenCount / 1000).toFixed(1) }}k tokens
                 </div>
                 <!-- T15：hover 操作簇（置顶/重命名/删除） -->
@@ -1377,6 +1405,16 @@ onUnmounted(() => {
       >
         <button
           class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          :class="multiExpertActive ? 'bg-accent text-foreground' : ''"
+          :title="multiExpertActive ? '多专家协作：已升级为监督者编排（点击降级回自动路由）' : '多专家协作：本会话升级为监督者编排'"
+          aria-label="多专家协作"
+          :disabled="!supervisorAgentId"
+          @click="toggleMultiExpert"
+        >
+          <component :is="NetworkIcon" class="h-4 w-4" />
+        </button>
+        <button
+          class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           :class="showTasks ? 'bg-accent text-foreground' : ''"
           aria-label="任务"
           title="任务列表"
@@ -1446,7 +1484,7 @@ onUnmounted(() => {
           >
             <component :is="BotIcon" class="h-3.5 w-3.5" />
             <span class="max-w-[100px] truncate">
-              {{ currentAgent?.name ?? '默认模式' }}
+              {{ currentAgent?.name ?? (routedAgentName ? `已路由 → ${routedAgentName}` : '自动路由') }}
             </span>
           </button>
           <!-- Agent 下拉选择 -->
@@ -1465,8 +1503,8 @@ onUnmounted(() => {
             >
               <div class="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px]">AI</div>
               <div class="min-w-0 flex-1">
-                <div class="font-medium">默认模式</div>
-                <div class="truncate text-[10px] text-muted-foreground">不使用 Agent，纯对话</div>
+                <div class="font-medium">自动路由</div>
+                <div class="truncate text-[10px] text-muted-foreground">按问题意图自动分派专家 Agent</div>
               </div>
             </button>
             <button
@@ -1689,6 +1727,8 @@ onUnmounted(() => {
         :mcp-total="0"
       />
     </div>
+
+
   </div>
 </template>
 

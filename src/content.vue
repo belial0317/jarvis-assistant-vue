@@ -15,6 +15,7 @@ import Nl2sqlAuditCompact from './modules/nl2sql-audit-compact.vue';
 import PerceptionCenter from './modules/perception-center.vue';
 import ProviderCompact from './modules/provider-compact.vue';
 import SettingsCompact from './modules/settings-compact.vue';
+import ScheduleCompact from './modules/schedule-compact.vue';
 import SkillCompact from './modules/skill-compact.vue';
 
 import {
@@ -158,6 +159,7 @@ watch(
           @go-settings="goToSettings"
         />
         <SkillCompact v-else-if="active === 'skill'" />
+        <ScheduleCompact v-else-if="active === 'schedule'" />
         <AgentCompact
           v-else-if="active === 'agent'"
           @start-chat="handleStartChat"

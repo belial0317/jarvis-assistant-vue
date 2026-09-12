@@ -20,6 +20,7 @@ const ProviderIcon = createIconifyIcon('lucide:server');
 const AuditIcon = createIconifyIcon('lucide:scroll-text');
 const PerceptionIcon = createIconifyIcon('lucide:radar');
 const SettingsIcon = createIconifyIcon('lucide:settings');
+const ClockIcon = createIconifyIcon('lucide:clock');
 
 const iconMap: Record<AIModuleType, any> = {
   agent: AgentIcon,
@@ -30,6 +31,7 @@ const iconMap: Record<AIModuleType, any> = {
   perception: PerceptionIcon,
   provider: ProviderIcon,
   settings: SettingsIcon,
+  schedule: ClockIcon,
   skill: SkillIcon,
 };
 
@@ -37,6 +39,7 @@ const ALL_MODULES: AIModuleMeta[] = [
   { key: 'chat', label: '会话工作台', icon: '', description: '与 AI 对话', ready: true },
   { key: 'skill', label: 'Skill 管理', icon: '', description: '技能与斜杠命令', ready: true },
   { key: 'agent', label: 'Agents 管理', icon: '', description: '智能体角色', ready: true },
+  { key: 'schedule', label: '定时任务', icon: '', description: '周期/定点自动执行', ready: true },
   { key: 'mcp', label: 'MCP 管理', icon: '', description: '模型上下文协议', ready: true },
   { key: 'knowledge', label: '知识库', icon: '', description: '文档与检索', ready: true },
   // 插件市场本期取消（2026-08-27 用户决策，对齐 tasks-2608-2600-23 插件化搁置）；

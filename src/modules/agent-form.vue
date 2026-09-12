@@ -142,6 +142,7 @@ interface FormState {
   name: string;
   avatar: string;
   description: string;
+  routeKeywords: string;
   modelId: string;
   systemPrompt: string;
   desensitizeRules: DesensitizeRule[];
@@ -161,6 +162,7 @@ const defaultState = (): FormState => ({
   name: '',
   avatar: '🤖',
   description: '',
+  routeKeywords: '',
   modelId: modelOptions.value[0]?.value ?? '',
   systemPrompt:
     '你是一个智能助手，请根据用户的问题和提供的页面上下文给出准确、简洁的回答。',
@@ -196,6 +198,7 @@ watch(
       form.name = props.data.name;
       form.avatar = props.data.avatar;
       form.description = props.data.description;
+      form.routeKeywords = props.data.routeKeywords ?? '';
       form.modelId = props.data.modelId;
       form.systemPrompt = props.data.systemPrompt;
       form.desensitizeRules = (props.data.desensitizeRules ?? []).map((r) => ({
@@ -273,6 +276,7 @@ function handleOk() {
     name: form.name,
     avatar: form.avatar || '🤖',
     description: form.description,
+    routeKeywords: form.routeKeywords,
     modelId: form.modelId,
     systemPrompt: form.systemPrompt,
     desensitizeRules: form.desensitizeRules.filter(
@@ -342,6 +346,14 @@ function handleCancel() {
       <div>
         <label class="mb-1 block text-[12px] text-muted-foreground">描述</label>
         <a-input v-model:value="form.description" placeholder="简要描述智能体职责" />
+            </div>
+            <div>
+              <label class="mb-1 block text-[11px] text-muted-foreground">路由关键词（逗号分隔，默认模式规则层匹配）</label>
+              <input
+                v-model="form.routeKeywords"
+                class="h-7 w-full rounded border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
+                placeholder="如：统计,订单,数据"
+              />
       </div>
 
       <div>

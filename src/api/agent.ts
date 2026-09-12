@@ -24,6 +24,7 @@ export interface AgentSaveDTO {
   name: string;
   avatar?: string;
   description?: string;
+  routeKeywords?: string;
   systemPrompt?: string;
   desensitizeRules?: DesensitizeRule[];
   outputOptimization?: OutputOptimization;

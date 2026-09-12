@@ -50,7 +50,17 @@ export function getSkill(id: string) {
 }
 
 export function saveSkill(dto: SkillSaveDTO) {
-  return aiRequestClient.post<string>(SkillApi.SAVE, dto);
+  // 后端 DTO 复杂字段均为 JSON 字符串（parameters: SkillParameter[] /
+  // allowedTools·triggerKeywords: string[]），组件内数组形态在此统一序列化
+  const payload = {
+    ...dto,
+    parameters: Array.isArray(dto.parameters) ? JSON.stringify(dto.parameters) : dto.parameters,
+    allowedTools: Array.isArray(dto.allowedTools) ? JSON.stringify(dto.allowedTools) : dto.allowedTools,
+    triggerKeywords: Array.isArray(dto.triggerKeywords)
+      ? JSON.stringify(dto.triggerKeywords)
+      : dto.triggerKeywords,
+  };
+  return aiRequestClient.post<string>(SkillApi.SAVE, payload);
 }
 
 export function deleteSkill(id: string) {

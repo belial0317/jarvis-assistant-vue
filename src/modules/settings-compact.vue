@@ -7,6 +7,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import {
   getAiApiKey,
   getAiBaseUrl,
+  getHostAiApiKey,
   maskAiApiKey,
   resetAiApiKey,
   resetAiBaseUrl,
@@ -115,20 +116,27 @@ function loadBackendUrl() {
 }
 
 // ===== API Key 配置 =====
+// 用户裁决（2026-09-11）：默认不显示 sk-jarvis Key。
+// - 宿主/门户统一下发的 Key 仅驻内存（getHostAiApiKey），此处绝不回显；
+// - 用户自存的 Key 仅显示脱敏串，不提供明文查看（重输即覆盖）。
 const apiKeyInput = ref('');
-/** 已配置 key 的脱敏展示（响应式：保存/清除后刷新） */
+/** 已配置 key 的脱敏展示（响应式：保存/清除后刷新）；仅含用户自存 Key */
 const savedApiKeyMasked = ref('');
-/** 明文查看开关：默认密文，点眼睛图标切换 */
-const apiKeyVisible = ref(false);
-const EyeIcon = createIconifyIcon('lucide:eye');
-const EyeOffIcon = createIconifyIcon('lucide:eye-off');
+/** 宿主/门户是否已统一下发凭据（下发后无需用户配置） */
+const hostKeyApplied = ref(false);
 
 function loadApiKey() {
+  savedApiKeyMasked.value = maskApiKeyForDisplay();
+  apiKeyInput.value = '';
+  hostKeyApplied.value = Boolean(
+    getHostAiApiKey() || typeof hostConfig.auth?.getToken === 'function',
+  );
+}
+
+/** 脱敏串：仅基于用户自存 Key 计算；无自存 Key 时为空串 */
+function maskApiKeyForDisplay(): string {
   const saved = getAiApiKey();
-  savedApiKeyMasked.value = saved ? maskAiApiKey(saved) : '';
-  // 已配置时输入框回填完整 key（密文呈现），可点眼睛查看明文；未配置则留空待输入
-  apiKeyInput.value = saved ?? '';
-  apiKeyVisible.value = false;
+  return saved ? maskAiApiKey(saved) : '';
 }
 
 function saveApiKey() {
@@ -321,28 +329,21 @@ onMounted(() => {
             <div>· 切换后所有 AI 请求（含流式 SSE）立即生效，无需刷新</div>
           </div>
 
-          <!-- API Key 配置（管理端可通过 settings.apiKeyVisible=false 锁定隐藏） -->
+          <!-- API Key 配置（宿主下发凭据绝不回显；用户自存 Key 仅脱敏展示） -->
           <div v-if="showApiKeyField" class="border-t border-border pt-2">
             <label class="mb-1 block text-[11px] text-muted-foreground">
               API Key
-              <span v-if="!savedApiKeyMasked" class="ml-1 text-amber-600">未配置（使用宿主默认凭据）</span>
+              <span v-if="hostKeyApplied" class="ml-1 text-emerald-600">门户已统一下发（已隐藏）</span>
+              <span v-else-if="!savedApiKeyMasked" class="ml-1 text-amber-600">未配置（使用宿主默认凭据）</span>
             </label>
             <div class="flex items-center gap-1.5">
               <input
                 v-model="apiKeyInput"
-                :type="apiKeyVisible ? 'text' : 'password'"
+                type="password"
                 autocomplete="off"
                 class="h-7 flex-1 rounded-md border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
-                :placeholder="savedApiKeyMasked ? '已配置（点击右侧眼睛图标查看）' : '输入 sk-jarvis- 开头的 API Key'"
+                :placeholder="savedApiKeyMasked ? `已配置（${savedApiKeyMasked}），输入新 Key 可覆盖` : '输入 sk-jarvis- 开头的 API Key'"
               />
-              <button
-                v-if="savedApiKeyMasked"
-                class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-                :title="apiKeyVisible ? '隐藏明文' : '查看明文'"
-                @click="apiKeyVisible = !apiKeyVisible"
-              >
-                <component :is="apiKeyVisible ? EyeOffIcon : EyeIcon" class="h-3.5 w-3.5" />
-              </button>
               <button
                 class="h-7 flex-shrink-0 rounded-md bg-primary px-2.5 text-[11px] text-primary-foreground hover:bg-primary/90"
                 @click="saveApiKey"
@@ -359,9 +360,14 @@ onMounted(() => {
               </button>
             </div>
             <div class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-              · Key 仅保存在本浏览器（localStorage），不会上传；由门户运营平台分配
+              <template v-if="hostKeyApplied">
+                · 本门户由系统管理员统一下发访问凭据（已隐藏，无需配置）；此处仅当需要使用自己的 Key 时填写
+              </template>
+              <template v-else>
+                · Key 仅保存在本浏览器（localStorage），不会上传；由门户运营平台分配
+              </template>
               <template v-if="savedApiKeyMasked">
-                <br />· 修改后点"保存"覆盖；输入框默认密文呈现，点眼睛图标查看明文
+                <br />· 已保存的 Key 仅以脱敏形式展示，不提供明文查看；输入新 Key 点"保存"即可覆盖
               </template>
             </div>
           </div>
