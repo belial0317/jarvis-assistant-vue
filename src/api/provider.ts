@@ -83,3 +83,25 @@ export function listProviderModels(id: string) {
     path(ProviderApi.MODELS, { id }),
   );
 }
+
+/** tasks-2609-1400-10 增量：保存供应商模型（POST /providers/{id}/models） */
+export function saveProviderModel(
+  providerId: string,
+  model: {
+    id?: string;
+    name: string;
+    displayName: string;
+    modelType?: string;
+    isDefault?: boolean;
+  },
+) {
+  return aiRequestClient.post<string>(
+    `/providers/${providerId}/models`,
+    model,
+  );
+}
+
+/** tasks-2609-1400-10 增量：删除供应商模型（DELETE /providers/models/{modelId}） */
+export function deleteProviderModel(modelId: string) {
+  return aiRequestClient.delete(`/providers/models/${modelId}`);
+}

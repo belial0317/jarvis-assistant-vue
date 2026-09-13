@@ -3,6 +3,7 @@ import { createIconifyIcon } from '../providers/icons';
 import { message } from 'ant-design-vue';
 
 import { computed, onMounted, reactive, ref } from 'vue';
+import { fetchWhoami } from '../api/whoami';
 
 import {
   getAiApiKey,
@@ -37,8 +38,11 @@ const hostConfig: AiAssistantConfig = (() => {
 
 /** 「服务地址」字段可见性（false = 管理端锁定，不可查看/编辑） */
 const showServiceUrl = hostConfig.settings?.serviceUrlVisible !== false;
-/** 「API Key」字段可见性 */
-const showApiKeyField = hostConfig.settings?.apiKeyVisible !== false;
+/** 「API Key」字段可见性
+ *  门户演示模式（syncParams.apiKey 下发了公共 key）：隐藏输入框，显示"已统一下发"
+ *  宿主系统模式（sp 平台等真实业务系统）：显示输入框，用户自行配置自己的 sk-key */
+const showApiKeyField = hostConfig.settings?.apiKeyVisible !== false
+  && !hostConfig.syncParams?.apiKey;
 
 defineOptions({ name: 'AiSettings' });
 
@@ -77,8 +81,11 @@ async function loadModelOptions() {
   } else {
     try {
       const providers = await listProviders({ enabled: true });
+      // 只保留 chat 模型（对话通道不能用 embedding 等其他类型）
       modelOptions.value = providers.flatMap((p) =>
-          (p.models ?? []).map((m) => ({ label: m.displayName, value: m.name })),
+          (p.models ?? [])
+              .filter((m) => !m.modelType || m.modelType === 'chat')
+              .map((m) => ({ label: m.displayName, value: m.name })),
       );
     } catch {
       // 目录加载失败：留空下拉（不伪造模型项）
@@ -91,6 +98,36 @@ async function loadModelOptions() {
     if (!hit) {
       settings.defaultModel = modelOptions.value[0]!.value;
     }
+  }
+}
+
+// ===== tasks-2609-1400-10 增量：NL2SQL 接口绑定地址 =====
+const nl2sqlUrlInput = ref('');
+
+async function loadNl2sqlUrl() {
+  const { getNl2sqlBaseUrl } = await import('../api/nl2sql');
+  nl2sqlUrlInput.value = getNl2sqlBaseUrl();
+}
+
+async function saveNl2sqlUrl() {
+  const { setNl2sqlBaseUrl } = await import('../api/nl2sql');
+  const url = nl2sqlUrlInput.value.trim();
+  setNl2sqlBaseUrl(url);
+  message.success(
+    url
+      ? `NL2SQL 接口绑定地址已设置为：${url}`
+      : '已清空 NL2SQL 绑定地址（回落后端主通道）',
+  );
+}
+
+// ===== tasks-2609-1400-10：当前登录用户（服务端已脱敏） =====
+const whoami = ref<{ displayName: string; phone: string; role: string } | null>(null);
+
+async function loadWhoami() {
+  try {
+    whoami.value = await fetchWhoami();
+  } catch {
+    whoami.value = null;
   }
 }
 
@@ -139,15 +176,27 @@ function maskApiKeyForDisplay(): string {
   return saved ? maskAiApiKey(saved) : '';
 }
 
-function saveApiKey() {
+async function saveApiKey() {
   const key = apiKeyInput.value.trim();
   if (!key) {
     message.error('请输入 API Key（sk-jarvis- 开头，由门户平台分配）');
     return;
   }
+  // 防呆：掩码格式（含 ****）说明用户复制了脱敏值——直接拦截，避免保存无效 key
+  if (key.includes('****')) {
+    message.error('检测到复制了脱敏的 Key（含 ****）。请在门户控制台点击「复制完整 Key」获取有效 Key');
+    return;
+  }
   setAiApiKey(key);
   loadApiKey();
-  message.success(`API Key 已保存：${maskAiApiKey(key)}`);
+  // 在线验证 key 是否有效（通过后端代理调 NL2SQL 或 sessions 接口测试）
+  try {
+    const { aiRequestClient } = await import('../api/client');
+    await aiRequestClient.get('/host-keys/validate', { params: { key } });
+    message.success(`API Key 已保存：${maskAiApiKey(key)}（验证通过 ✓）`);
+  } catch {
+    message.warning(`API Key 已保存：${maskAiApiKey(key)}（在线验证未通过，请确认 Key 是否有效）`);
+  }
 }
 
 function handleClearApiKey() {
@@ -207,6 +256,8 @@ async function testBackendConnection() {
 }
 
 onMounted(() => {
+  void loadNl2sqlUrl();
+  void loadWhoami();
   loadBackendUrl();
   void loadModelOptions();
 });
@@ -218,6 +269,19 @@ onMounted(() => {
       class="flex h-[38px] flex-shrink-0 items-center border-b border-border bg-background px-3"
     >
       <span class="text-[13px] font-medium">设置</span>
+    </div>
+<!-- tasks-2609-1400-10：当前登录用户（服务端脱敏下发） -->
+    <div
+      v-if="whoami"
+      class="flex items-center gap-2 border-b border-border bg-background px-4 py-2.5 text-[12px]"
+    >
+      <span class="text-muted-foreground">当前用户</span>
+      <span class="font-medium">{{ whoami.displayName }}</span>
+      <span v-if="whoami.phone" class="text-muted-foreground">{{ whoami.phone }}</span>
+      <span
+        v-if="whoami.role === 'admin'"
+        class="rounded bg-primary/10 px-1.5 py-0.5 text-primary"
+      >管理员</span>
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto p-3">
@@ -369,6 +433,49 @@ onMounted(() => {
               <template v-if="savedApiKeyMasked">
                 <br />· 已保存的 Key 仅以脱敏形式展示，不提供明文查看；输入新 Key 点"保存"即可覆盖
               </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- tasks-2609-1400-10 增量：NL2SQL 接口绑定 -->
+      <div class="mb-4">
+        <div class="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground">
+          <component :is="ServerIcon" class="h-3.5 w-3.5" />
+          NL2SQL 接口绑定
+        </div>
+        <div class="rounded-lg border border-border bg-card p-3">
+          <div>
+            <label class="mb-1 block text-[11px] text-muted-foreground">
+              接口绑定地址
+              <span class="text-muted-foreground/70">
+                （留空走后端主通道；可指向独立部署的 NL2SQL 服务，如
+                <code class="rounded bg-muted px-1 text-[10px]">http://host:8081</code>）
+              </span>
+            </label>
+            <div class="flex items-center gap-1.5">
+              <input
+                v-model="nl2sqlUrlInput"
+                type="text"
+                class="h-7 flex-1 rounded-md border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
+                placeholder="留空 = 后端主通道；或 http://host:port"
+              />
+              <button
+                class="h-7 flex-shrink-0 rounded-md bg-primary px-2.5 text-[11px] text-primary-foreground hover:bg-primary/90"
+                @click="saveNl2sqlUrl"
+              >
+                保存
+              </button>
+              <button
+                class="h-7 flex-shrink-0 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-accent"
+                title="清空绑定地址（回落主通道）"
+                @click="nl2sqlUrlInput = ''; saveNl2sqlUrl()"
+              >
+                重置
+              </button>
+            </div>
+            <div class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+              · NL2SQL 审计模块与对话中的数据问答将使用此地址；对接说明见门户控制台「NL2SQL 对接指南」
             </div>
           </div>
         </div>

@@ -196,6 +196,8 @@ export interface Provider {
   baseUrl: string;
   /** 加密存储，前端脱敏展示 */
   apiKeyMasked: string;
+  /** 明文 Key（仅创建/编辑提交时携带；列表回显只有掩码） */
+  apiKey?: string;
   status: ProviderStatus;
   enabled: boolean;
   isBuiltin: boolean;

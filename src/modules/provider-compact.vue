@@ -1,12 +1,14 @@
 <script lang="ts" setup>
 import { createIconifyIcon } from '../providers/icons';
-import { message } from 'ant-design-vue';
+import { message, Input as AInput, Modal as AModal, Switch as ASwitch } from 'ant-design-vue';
 
-import { onMounted, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 
-import type { Provider } from '../types';
+import type { Provider, ProviderModel } from '../types';
 
 import { modelTypeText, providerStatusMap } from '../constants';
+import { fetchModelCatalog } from '../api/chat';
+import { deleteProvider, deleteProviderModel, saveProviderModel } from '../api/provider';
 import {
   listProviders,
   saveProvider,
@@ -78,13 +80,29 @@ function handleAdd() {
 async function handleSubmit(data: Partial<Provider>) {
   try {
     const id = await saveProvider({
-      name: data.name ?? '未命名',
-      type: data.type ?? 'custom',
+      id: data.id,
+      name: data.name?.trim() || '未命名',
+      type: data.type ?? 'openai-compatible',
       baseUrl: data.baseUrl ?? '',
-      apiKey: data.apiKeyMasked,
+      // 修复（tasks-2609-1400-10）：读明文 apiKey（此前误读掩码串，Key 无法落库）
+      apiKey: data.apiKey ?? '',
       enabled: data.enabled ?? true,
       isBuiltin: false,
     });
+    // 模型持久化（此前创建后模型丢失）
+    for (const m of data.models ?? []) {
+      if (!m.name?.trim()) continue;
+      try {
+        await saveProviderModel(id, {
+          name: m.name.trim(),
+          displayName: m.displayName || m.name,
+          modelType: m.modelType,
+          isDefault: m.isDefault,
+        });
+      } catch {
+        message.warning(`模型 ${m.name} 保存失败，可稍后在模型管理补录`);
+      }
+    }
     const newProvider: Provider = {
       id,
       name: data.name ?? '未命名',
@@ -97,11 +115,123 @@ async function handleSubmit(data: Partial<Provider>) {
       models: data.models ?? [],
       createdAt: Date.now(),
     };
+    if (data.id) {
+      // 编辑：刷新列表拿服务端状态（掩码/模型同步）
+      message.success(`供应商 ${newProvider.name} 已保存`);
+      await loadProviders();
+      return;
+    }
     providers.value.unshift(newProvider);
     message.success(`供应商 ${newProvider.name} 已创建`);
   } catch {
     message.error('创建失败');
   }
+}
+
+// ===== tasks-2609-1400-10 增量：私有模型编辑/删除（官方模型只读） =====
+const modelEditOpen = ref(false);
+const modelSaving = ref(false);
+const modelEditProvider = ref<Provider | null>(null);
+const modelEditForm = reactive({ id: '', name: '', displayName: '', isDefault: false });
+
+/** 私有供应商（列表已按本人过滤）可管理模型；官方（内置）模型只读 */
+function canManageModels(p: { isBuiltin?: boolean }): boolean {
+  return !p.isBuiltin;
+}
+
+function openProviderEdit(p: Provider) {
+  editingData.value = p;
+  formOpen.value = true;
+}
+
+function confirmProviderDelete(p: Provider) {
+  AModal.confirm({
+    title: '删除供应商',
+    content: `确认删除「${p.name}」？其模型目录将一并删除。`,
+    okText: '确认删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      await deleteProvider(p.id);
+      message.success('供应商已删除');
+      await loadProviders();
+    },
+  });
+}
+
+function openModelEdit(p: Provider, m: ProviderModel) {
+  modelEditProvider.value = p;
+  modelEditForm.id = m.id;
+  modelEditForm.name = m.name;
+  modelEditForm.displayName = m.displayName || m.name;
+  modelEditForm.isDefault = !!m.isDefault;
+  modelEditOpen.value = true;
+}
+
+async function saveModelEdit() {
+  const pid = modelEditProvider.value?.id;
+  if (!pid || modelSaving.value) return;
+  if (!modelEditForm.name.trim() || !modelEditForm.displayName.trim()) {
+    message.warning('模型标识与显示名必填');
+    return;
+  }
+  modelSaving.value = true;
+  try {
+    await saveProviderModel(pid, {
+      id: modelEditForm.id || undefined,
+      name: modelEditForm.name.trim(),
+      displayName: modelEditForm.displayName.trim(),
+      modelType: 'chat',
+      isDefault: modelEditForm.isDefault,
+    });
+    message.success('模型已保存');
+    modelEditOpen.value = false;
+    await loadProviders();
+  } catch {
+    message.error('保存失败');
+  } finally {
+    modelSaving.value = false;
+  }
+}
+
+function confirmModelDelete(p: Provider, m: ProviderModel) {
+  AModal.confirm({
+    title: '删除模型',
+    content: `确认删除「${m.displayName || m.name}」？删除后使用它的会话将回落默认模型。`,
+    okText: '确认删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      await deleteProviderModel(m.id);
+      message.success('已删除');
+      await loadProviders();
+    },
+  });
+}
+
+/** tasks-2609-1400-10：套餐内官方模型名集合（目录 builtin 供应商的模型） */
+const planModelNames = new Set<string>();
+
+async function loadPlanModels() {
+  try {
+    const catalog = await fetchModelCatalog();
+    planModelNames.clear();
+    for (const pv of catalog.providers ?? []) {
+      if (!pv.builtin) continue;
+      for (const m of pv.models ?? []) planModelNames.add(m.name);
+    }
+  } catch {
+    planModelNames.clear();
+  }
+}
+
+function isInPlan(
+  p: { isBuiltin?: boolean },
+  m: { name?: string; id?: string },
+): boolean {
+  if (p.isBuiltin) return planModelNames.has(m.name ?? '');
+  // 私有供应商模型不属于套餐，标识为非套餐
+  return false;
 }
 
 /** 按模型类型分组统计（用于卡片展示模型类型分布） */
@@ -117,6 +247,7 @@ function modelTypeGroups(p: Provider): Array<{ type: string; count: number }> {
 onMounted(() => {
   if (health.value.state === 'disconnected') return;
   loadProviders();
+  void loadPlanModels();
 });
 </script>
 
@@ -184,7 +315,7 @@ onMounted(() => {
             </button>
           </div>
 
-          <div class="mt-2 flex items-center justify-between pl-10">
+          <div class="mt-2 pl-10">
             <div class="flex flex-wrap items-center gap-1 text-[11px]">
               <span
                 class="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
@@ -198,32 +329,109 @@ onMounted(() => {
                 {{ providerStatusMap[p.status]?.text }}
               </span>
               <span class="text-muted-foreground">{{ p.models.length }} 模型</span>
+            </div>
+            <!-- tasks-2609-1400-10：逐模型芯片；套餐内模型带「套餐」徽标 -->
+            <div
+              v-if="modelTypeGroups(p).length"
+              class="mt-1.5 flex flex-wrap gap-1"
+            >
               <span
-                v-for="g in modelTypeGroups(p)"
-                :key="g.type"
-                class="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-primary"
-                :title="`${modelTypeText[g.type] ?? g.type} 模型 ${g.count} 个`"
+                v-for="m in p.models"
+                :key="m.id"
+                class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+                :class="
+                  isInPlan(p, m)
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-muted text-muted-foreground'
+                "
+                :title="
+                  isInPlan(p, m)
+                    ? '当前套餐内模型，可直接对话'
+                    : '不在当前套餐内，对话路由将回落/被拦'
+                "
               >
-                {{ modelTypeText[g.type] ?? g.type }}
-                <span class="font-semibold">{{ g.count }}</span>
+                {{ m.displayName || m.name }}
+                <span
+                  v-if="isInPlan(p, m)"
+                  class="rounded-sm bg-primary px-1 text-[9px] font-semibold text-white"
+                >
+                  套餐
+                </span>
+                <template v-if="canManageModels(p)">
+                  <button
+                    class="ml-0.5 rounded px-0.5 text-[10px] opacity-50 hover:bg-accent hover:opacity-100"
+                    :title="'编辑模型'"
+                    @click.stop="openModelEdit(p, m)"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    class="rounded px-0.5 text-[10px] opacity-50 hover:bg-red-500/10 hover:text-red-500 hover:opacity-100"
+                    :title="'删除模型'"
+                    @click.stop="confirmModelDelete(p, m)"
+                  >
+                    ✕
+                  </button>
+                </template>
               </span>
             </div>
-            <button
-              class="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-              :disabled="testing === p.id"
-              @click="testConnection(p)"
-            >
-              <component
-                :is="ZapIcon"
-                class="h-3 w-3"
-                :class="testing === p.id ? 'animate-pulse' : ''"
-              />
-              {{ testing === p.id ? '测试中…' : '测试连接' }}
-            </button>
+            <div class="mt-1.5 flex items-center justify-end gap-1">
+              <template v-if="canManageModels(p)">
+                <button
+                  class="rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                  @click="openProviderEdit(p)"
+                >
+                  编辑
+                </button>
+                <button
+                  class="rounded px-2 py-1 text-[11px] text-red-500/80 hover:bg-red-500/10 hover:text-red-500"
+                  @click="confirmProviderDelete(p)"
+                >
+                  删除
+                </button>
+              </template>
+              <button
+                class="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                :disabled="testing === p.id"
+                @click="testConnection(p)"
+              >
+                <component
+                  :is="ZapIcon"
+                  class="h-3 w-3"
+                  :class="testing === p.id ? 'animate-pulse' : ''"
+                />
+                {{ testing === p.id ? '测试中…' : '测试连接' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- tasks-2609-1400-10：私有模型编辑对话框 -->
+    <AModal
+      v-model:open="modelEditOpen"
+      title="编辑模型"
+      :confirm-loading="modelSaving"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="saveModelEdit"
+    >
+      <div class="space-y-3 py-2">
+        <div>
+          <p class="mb-1 text-[12px] text-muted-foreground">显示名</p>
+          <AInput v-model:value="modelEditForm.displayName" placeholder="DeepSeek-V4-Flash" />
+        </div>
+        <div>
+          <p class="mb-1 text-[12px] text-muted-foreground">模型标识（发送给上游的 model 参数）</p>
+          <AInput v-model:value="modelEditForm.name" placeholder="deepseek-v4-flash" />
+        </div>
+        <label class="flex items-center gap-2 text-[12px]">
+          <ASwitch v-model:checked="modelEditForm.isDefault" size="small" />
+          设为目录默认模型
+        </label>
+      </div>
+    </AModal>
 
     <ProviderForm v-model:open="formOpen" :data="editingData" @submit="handleSubmit" />
   </div>

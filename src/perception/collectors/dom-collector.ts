@@ -17,11 +17,20 @@ export class DomCollector {
     return this.observer !== null;
   }
 
-  /** 观察一组目标；重复调用会先解除旧观察 */
+  /** 修复：感知观察根排除 AI 助手抽屉容器（输入框每次按键都触发全页采集，
+   *  与 Vue 响应式抢主线程导致"首字符被吃/Enter 失效"，也放大无谓采集） */
+  private static readonly EXCLUDE_SELECTOR = '.ai-assistant-drawer, .ant-drawer';
+
+  /** 观察一组目标；重复调用会先解除旧观察。抽屉容器内的目标会被剔除。 */
   attach(targets: Element[]): void {
     this.detach();
     if (targets.length === 0) return;
-    this.targets = [...targets];
+    this.targets = targets.filter((t) => {
+      if (t.closest && t.closest(DomCollector.EXCLUDE_SELECTOR)) {
+        return false;
+      }
+      return true;
+    });
     const observer = new MutationObserver((records) => {
       // 风暴防护：超出上限的记录明细直接丢弃，仅保留「发生过变异」的信号
       if (records.length > MAX_RECORDS_PER_FLUSH) {

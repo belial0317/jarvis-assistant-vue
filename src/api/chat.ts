@@ -259,6 +259,16 @@ export function resumeRun(sessionId: string) {
   );
 }
 
+/**
+ * tasks-2609-1323-00 T3：探测会话是否有可恢复的未完成运行（suspended/interrupted）。
+ * 重挂载/切会话时惰性调用，不触发任何生成动作。
+ */
+export function hasResumableRun(sessionId: string) {
+  return aiRequestClient.get<boolean>(
+    `/chat/sessions/${sessionId}/resumable`,
+  );
+}
+
 /** 停止生成 */
 export function stopGenerate(sessionId: string) {
   return aiRequestClient.post(path(ChatApi.STOP, { sessionId }));
@@ -377,4 +387,28 @@ export function respondToolApproval(
     path(ChatApi.TOOL_APPROVAL, { sessionId, approvalId }),
     { approved },
   );
+}
+
+/**
+ * tasks-2609-1400-10 增量：按订阅套餐过滤的模型目录
+ * （官方=套餐关联模型；私有=本人供应商模型全量）。模型选项的唯一权威来源。
+ */
+export interface CatalogModelItem {
+  id: string;
+  name: string;
+  providerName: string;
+  displayName: string;
+}
+export interface ModelCatalog {
+  providers: Array<{
+    providerId: string;
+    providerName: string;
+    builtin: boolean;
+    models: CatalogModelItem[];
+  }>;
+  defaultModel?: CatalogModelItem | null;
+}
+
+export function fetchModelCatalog() {
+  return aiRequestClient.get<ModelCatalog>('/api-token/providers');
 }

@@ -3,6 +3,7 @@ import { createIconifyIcon } from '../providers/icons';
 import {
   Input as AInput,
   InputPassword as AInputPassword,
+  message,
   Modal as AModal,
   Select as ASelect,
   Switch as ASwitch,
@@ -107,10 +108,26 @@ function setDefault(idx: number) {
 }
 
 function handleOk() {
+  // 必填校验（创建必须有 Key；编辑留空=保持原值）
+  if (!form.name.trim() || !form.baseUrl.trim()) {
+    message.warning('请填写供应商名称与 Base URL');
+    return;
+  }
+  if (!props.data?.id && !form.apiKey.trim()) {
+    message.warning('新建供应商必须填写 API Key');
+    return;
+  }
+  const modelRows = models.filter((m) => m.name.trim());
+  if (modelRows.length === 0) {
+    message.warning('请至少添加一个模型（填写模型名）');
+    return;
+  }
   const result: Partial<Provider> = {
-    name: form.name,
-    type: form.type,
-    baseUrl: form.baseUrl,
+    name: form.name.trim(),
+    type: form.type || 'openai-compatible',
+    baseUrl: form.baseUrl.trim(),
+    // tasks-2609-1400-10 修复：明文 Key 必须上送（此前误发掩码串，Key 永远无法落库）
+    apiKey: form.apiKey.trim(),
     enabled: form.enabled,
     models: models.map((m) => ({
       id: m.id,
@@ -126,9 +143,23 @@ function handleOk() {
       isDefault: m.isDefault,
     })),
   };
-  if (form.apiKey) {
-    result.apiKeyMasked = `${form.apiKey.slice(0, 6)}****${form.apiKey.slice(-4)}`;
-  }
+  result.apiKeyMasked = form.apiKey
+    ? `${form.apiKey.slice(0, 6)}****${form.apiKey.slice(-4)}`
+    : undefined;
+  // models 用校验后的行（过滤空行）
+  result.models = modelRows.map((m) => ({
+    id: m.id,
+    name: m.name.trim(),
+    displayName: (m.displayName || m.name).trim(),
+    modelType: m.modelType,
+    contextWindow: m.contextWindow,
+    supportsStreaming: true,
+    supportsToolUse: true,
+    supportsVision: false,
+    supportsThinking: false,
+    pricing: { input: 0, output: 0 },
+    isDefault: m.isDefault,
+  }));
   emit('submit', result);
   emit('update:open', false);
 }

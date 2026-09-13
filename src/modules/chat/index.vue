@@ -28,7 +28,7 @@ import {
   type PageProfileVO,
 } from '../../api/chat';
 import { aiRequestClient } from '../../api/client';
-import { resumeRun } from '../../api/chat';
+import { fetchModelCatalog, hasResumableRun, resumeRun } from '../../api/chat';
 import { listAgents, type AgentVO } from '../../api/agent';
 import { updateToolApprovalPolicy } from '../../api/mcp';
 import { listProviders } from '../../api/provider';
@@ -436,6 +436,22 @@ function preferredModelId(): string {
 }
 
 async function loadModelOptions() {
+  // tasks-2609-1400-10 增量：模型选项 = 套餐关联模型 ∪ 本人私有模型（目录端点为权威来源）
+  try {
+    const catalog = await fetchModelCatalog();
+    const list: Array<{ label: string; value: string; name?: string }> = [];
+    for (const pv of catalog.providers ?? []) {
+      for (const m of pv.models ?? []) {
+        list.push({ label: m.displayName || m.name, value: m.id, name: m.name });
+      }
+    }
+    if (list.length > 0) {
+      modelOptions.value = list;
+      return;
+    }
+  } catch {
+    // 目录不可达（无 sk-key 等）：回退供应商列表路径
+  }
   // 控制台配置了模型列表：以它为唯一模型源（值为模型名，后端原始名直传）
   if (consoleModels.length > 0) {
     modelOptions.value = consoleModels.map((m) => ({ label: m, value: m }));
@@ -446,6 +462,8 @@ async function loadModelOptions() {
     const list: Array<{ label: string; value: string; name?: string }> = [];
     for (const p of providers) {
       for (const m of p.models ?? []) {
+        // 会话对话通道只用 chat 模型；embedding 等其他类型不进下拉（防误选导致对话 404）
+        if (m.modelType && m.modelType !== 'chat') continue;
         list.push({ label: m.displayName, value: m.id, name: m.name });
       }
     }
@@ -665,6 +683,8 @@ async function switchSession(id: string) {
   await loadMessages(id);
   scrollToBottom();
   refreshPageInsight();
+  // tasks-2609-1323-00 T3：切入的会话若有未完成运行，自动续接补齐
+  void autoResumeIfInterrupted(id);
 }
 
 /** 删除会话 */
@@ -1070,6 +1090,48 @@ async function onContinueRun() {
   }
 }
 
+// ===== tasks-2609-1323-00 T3：断连未完成回复的自动续接 =====
+/** 会话级续接互斥（同一会话不并发 resume） */
+const autoResuming = ref(false);
+
+/**
+ * 惰性探测当前会话是否有可恢复的未完成运行（suspended/interrupted），
+ * 有则自动 resume 补齐回复。挂载恢复与切会话时调用；失败显式提示，不自动重发。
+ */
+async function autoResumeIfInterrupted(sessionId: string) {
+  if (!sessionId || autoResuming.value) return;
+  const sess = sessions.value.find((s) => s.id === sessionId);
+  if (!sess) return;
+  try {
+    const resumable = await hasResumableRun(sessionId);
+    if (!resumable) return;
+    autoResuming.value = true;
+    const vo = await resumeRun(sessionId);
+    const m = toChatMessage(vo);
+    sess.messages.push(m);
+    sess.tokenCount += m.content.length;
+    sess.updatedAt = Date.now();
+    scrollToBottom(true);
+    showTransientNotice('已自动恢复上次未完成的回复');
+  } catch {
+    // 显式失败：不自动重发（避免二次失控请求），给出可操作的恢复入口
+    showTransientNotice('上次回复未完成，可点击「继续」恢复');
+  } finally {
+    autoResuming.value = false;
+  }
+}
+
+/** 轻量提示条（3.5s 自动消失） */
+const transientNotice = ref('');
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+function showTransientNotice(text: string) {
+  transientNotice.value = text;
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => {
+    transientNotice.value = '';
+  }, 3500);
+}
+
 // ===== Diff 审批处理 =====
 async function onDiffAction(payload: {
   messageId: string;
@@ -1222,6 +1284,11 @@ onMounted(async () => {
     scrollToBottom();
   }
   refreshPageInsight();
+  // tasks-2609-1323-00 T3：重挂载恢复后，激活会话若有未完成运行则自动续接
+  // （覆盖"切页销毁组件再回来"场景；宽限内落库的消息由 loadMessages 直接可见）
+  if (activeId.value) {
+    void autoResumeIfInterrupted(activeId.value);
+  }
 });
 onUnmounted(() => {
   abortController?.abort();
@@ -1539,6 +1606,13 @@ onUnmounted(() => {
         ref="scrollRef"
         class="group min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4"
       >
+        <!-- tasks-2609-1323-00 T3：自动续接/失败提示条（3.5s 自动消失） -->
+        <div
+          v-if="transientNotice"
+          class="sticky top-0 z-10 mx-auto w-fit rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[12px] text-primary shadow-sm"
+        >
+          {{ transientNotice }}
+        </div>
         <!-- 后端未连通：覆盖整屏的友好提示（顶 banner 已说明，这里再二次确认） -->
         <div
           v-if="health.state === 'disconnected' && messages.length === 0"

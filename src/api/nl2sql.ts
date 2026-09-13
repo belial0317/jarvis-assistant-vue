@@ -14,6 +14,85 @@
 import { aiRequestClient } from './client';
 import { Nl2sqlApi, path } from './endpoints';
 
+// ===== tasks-2609-1400-10 增量：NL2SQL 接口绑定地址 =====
+const NL2SQL_URL_KEY = 'ai_assistant_nl2sql_url';
+
+/** 读取 NL2SQL 接口绑定地址（空 = 跟随后端主通道 /ai-api） */
+export function getNl2sqlBaseUrl(): string {
+  try {
+    return localStorage.getItem(NL2SQL_URL_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** 保存 NL2SQL 接口绑定地址（清空 = 恢复主通道） */
+export function setNl2sqlBaseUrl(url: string) {
+  try {
+    const v = url.trim();
+    if (v) localStorage.setItem(NL2SQL_URL_KEY, v);
+    else localStorage.removeItem(NL2SQL_URL_KEY);
+  } catch {
+    /* 存储不可用时静默 */
+  }
+}
+
+interface REnvelope<T> {
+  code: string | number;
+  data?: T;
+  message?: string;
+  success?: boolean;
+}
+
+/**
+ * NL2SQL 统一请求入口：
+ * - 未绑定地址 → 走主通道 aiRequestClient（同后端 /ai-api）
+ * - 绑定了绝对地址（http/https）→ 直连该接口（携带 API Key 鉴权头 + R 信封解包）
+ */
+export async function nl2sqlRequest<T>(
+  method: 'GET' | 'POST' | 'DELETE',
+  pathWithQuery: string,
+  body?: unknown,
+): Promise<T> {
+  const base = getNl2sqlBaseUrl();
+  if (!/^https?:\/\//i.test(base)) {
+    if (method === 'GET') return aiRequestClient.get<T>(pathWithQuery);
+    if (method === 'DELETE') return aiRequestClient.delete<T>(pathWithQuery);
+    return aiRequestClient.post<T>(pathWithQuery, body);
+  }
+  let token = '';
+  try {
+    token = localStorage.getItem('ai_assistant_api_key') ?? '';
+  } catch {
+    /* ignore */
+  }
+  const res = await fetch(base.replace(/\/$/, '') + pathWithQuery, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`NL2SQL 接口错误（HTTP ${res.status}）`);
+  }
+  const json = (await res.json()) as REnvelope<T>;
+  if (json.code !== 0 && json.code !== '0') {
+    throw new Error(json.message || 'NL2SQL 接口返回失败');
+  }
+  return json.data as T;
+}
+
+/** 绑定地址下的查询串工具（主通道时由 client 处理 params；直连时手工拼接） */
+function withQuery(p: string, params: Record<string, string | number | undefined>) {
+  const qs = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .join('&');
+  return qs ? `${p}?${qs}` : p;
+}
+
 /** SQL 执行结果（T3.3 增加 chartType） */
 export interface SqlResultVO {
   columns: string[];
@@ -62,7 +141,7 @@ export interface Nl2sqlDatasourceVO {
 
 /** 生成 SQL */
 export function generateSql(question: string, dbName?: string) {
-  return aiRequestClient.post<Nl2sqlGenerateVO>(Nl2sqlApi.GENERATE, {
+  return nl2sqlRequest<Nl2sqlGenerateVO>('POST', Nl2sqlApi.GENERATE, {
     question,
     dbName,
   });
@@ -74,7 +153,7 @@ export function executeSql(
   dbName?: string,
   datasourceId?: string,
 ) {
-  return aiRequestClient.post<SqlResultVO>(Nl2sqlApi.EXECUTE, {
+  return nl2sqlRequest<SqlResultVO>('POST', Nl2sqlApi.EXECUTE, {
     question,
     dbName,
     datasourceId,
@@ -83,18 +162,20 @@ export function executeSql(
 
 /** 同步 Schema */
 export function syncSchema(dbName?: string) {
-  return aiRequestClient.post<number>(Nl2sqlApi.SCHEMA_SYNC, undefined, {
-    params: { dbName },
-  });
+  return nl2sqlRequest<number>(
+    'POST',
+    withQuery(Nl2sqlApi.SCHEMA_SYNC, { dbName }),
+  );
 }
 
 // ===== T3.7 审计日志 =====
 
 /** 查询审计日志 */
 export function listAudits(limit = 50) {
-  return aiRequestClient.get<Nl2sqlAuditVO[]>(Nl2sqlApi.AUDITS, {
-    params: { limit },
-  });
+  return nl2sqlRequest<Nl2sqlAuditVO[]>(
+    'GET',
+    withQuery(Nl2sqlApi.AUDITS, { limit }),
+  );
 }
 
 /** T3.1 提交反馈（positive/negative） */
