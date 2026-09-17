@@ -40,6 +40,8 @@ export type {
 export { createIconifyIcon } from './providers/icons';
 export { setI18nLocale, getI18nLocale, t } from './i18n';
 export { maybeStartTour, resetTour, tourState, setBaseline, advanceIfSatisfied, TOUR_STEPS } from './composables/use-tour';
+export { getSdkVersion, getSdkChannel, getSdkPackage, checkSdkUpdate, compareVersion } from './composables/use-sdk-update';
+export type { SdkUpdateInfo } from './composables/use-sdk-update';
 export type { Locale } from './i18n';
 export { registerToolRenderer, registerToolRenderers, getToolRenderer, listToolRenderers } from './components/tool-renderers';
 import './components/builtin-tool-renderers';

@@ -11,12 +11,21 @@ import { Drawer as ADrawer, Tooltip as ATooltip } from 'ant-design-vue';
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 
 import AiAssistantContent from './content.vue';
+import { t } from './i18n';
 
 import {
   checkBackendHealth,
   useBackendHealth,
 } from './composables/use-backend-health';
 import { applySyncParams } from './composables/use-settings-sync';
+import {
+  SDK_UPDATE_KEY,
+  checkSdkUpdate,
+  dismissSdkNotice,
+  getSdkVersion,
+  isSdkNoticeDismissed,
+  type SdkUpdateInfo,
+} from './composables/use-sdk-update';
 
 import { pagePerception } from './perception/manager';
 
@@ -95,6 +104,27 @@ const XIcon = createIconifyIcon('lucide:x');
 const open = ref(false);
 const health = useBackendHealth();
 
+// ===== SDK 升级提醒（tasks-2609-1715-49 T4）=====
+// 检查时机（用户决策）：首次加载组件 + 每次打开面板各一次；in-flight 去重（T3）。
+// 状态经 provide 下发：抽屉头部标题栏 / settings「关于」消费；console 提醒仅输出一次。
+const sdkUpdate = ref<SdkUpdateInfo | null>(null);
+const sdkNoticeDismissed = ref(isSdkNoticeDismissed());
+function dismissSdkNoticeLocal(): void {
+  sdkNoticeDismissed.value = true;
+  dismissSdkNotice();
+}
+provide(SDK_UPDATE_KEY, { info: sdkUpdate, dismiss: dismissSdkNoticeLocal });
+
+async function runSdkUpdateCheck() {
+  const info = await checkSdkUpdate();
+  if (info && !sdkUpdate.value) {
+    sdkUpdate.value = info;
+    console.info(
+      `[jarvis-ai-assistant] ${getSdkVersion()} → ${info.latestVersion} 可用：${info.changelogUrl ?? '见变更日志'}`,
+    );
+  }
+}
+
 // ===== T16：抽屉形态（宽度可拖拽 560-960 记忆 / 窄屏全屏） =====
 const isNarrow = ref(typeof window !== 'undefined' && window.innerWidth < 768);
 const drawerWidthPx = ref(560);
@@ -166,6 +196,8 @@ function toggle() {
 watch(open, (isOpen) => {
   if (isOpen) {
     void checkBackendHealth();
+    // 每次打开面板检查一次 SDK 升级（首次加载在 onMounted）
+    void runSdkUpdateCheck();
   }
   // 感知管线联动：抽屉关闭暂停 DOM 观察（省 CPU），打开恢复并重采集
   pagePerception.setActive(isOpen);
@@ -174,6 +206,8 @@ watch(open, (isOpen) => {
 // ===== PP2 感知管线挂接：路由监听 + 可见性门控 =====
 // 挂载即启动（与抽屉开关无关：页面感知服务于会话上下文，抽屉仅门控观察）
 onMounted(() => {
+  // 首次加载组件：检查一次 SDK 升级
+  void runSdkUpdateCheck();
   pagePerception.start(resolvedConfig.route, resolvedConfig.mainContentSelector);
   // T16：窄屏视口监听（<768px 全屏宽度）
   const onResize = () => {
@@ -285,6 +319,28 @@ defineExpose({
             <component :is="SparklesIcon" class="h-3.5 w-3.5" />
           </div>
           <span class="text-[13px] font-medium">AI 助手</span>
+          <!-- SDK 升级提醒（tasks-2609-1715-49 T4）：闪烁红点 + 红字，点击直达对应版本 Release；changelogUrl 为空降级纯文案 -->
+          <span
+            v-if="sdkUpdate && !sdkNoticeDismissed"
+            class="flex items-center gap-1 text-[12px] text-red-500"
+          >
+            <span class="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
+            <a
+              v-if="sdkUpdate.changelogUrl"
+              :href="sdkUpdate.changelogUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="font-medium underline underline-offset-2 hover:text-red-600"
+            >{{ t('sdk.update.new') }}{{ sdkUpdate.latestVersion }}</a>
+            <span v-else class="font-medium">{{ t('sdk.update.new') }}{{ sdkUpdate.latestVersion }}</span>
+            <button
+              class="flex h-4 w-4 items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-600"
+              :title="t('sdk.update.close')"
+              @click="dismissSdkNoticeLocal"
+            >
+              <component :is="XIcon" class="h-3 w-3" />
+            </button>
+          </span>
         </div>
         <button
           class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"

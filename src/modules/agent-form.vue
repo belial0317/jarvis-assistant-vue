@@ -346,14 +346,14 @@ function handleCancel() {
       <div>
         <label class="mb-1 block text-[12px] text-muted-foreground">描述</label>
         <a-input v-model:value="form.description" placeholder="简要描述智能体职责" />
-            </div>
-            <div>
-              <label class="mb-1 block text-[11px] text-muted-foreground">路由关键词（逗号分隔，默认模式规则层匹配）</label>
-              <input
-                v-model="form.routeKeywords"
-                class="h-7 w-full rounded border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
-                placeholder="如：统计,订单,数据"
-              />
+      </div>
+      <div>
+        <label class="mb-1 block text-[11px] text-muted-foreground">路由关键词（逗号分隔，默认模式规则层匹配）</label>
+        <input
+          v-model="form.routeKeywords"
+          class="h-7 w-full rounded border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
+          placeholder="如：统计,订单,数据"
+        />
       </div>
 
       <div>
@@ -378,21 +378,14 @@ function handleCancel() {
       >
         <div class="mb-2 flex items-center justify-between">
           <div class="flex items-center gap-1.5">
-            <span class="text-[13px] font-medium text-orange-700 dark:text-orange-300"
-              >敏感信息过滤规则</span
-            >
-            <span class="text-[11px] text-muted-foreground"
-              >命中后回复自动脱敏</span
-            >
+            <span class="text-[13px] font-medium text-orange-700 dark:text-orange-300">敏感信息过滤规则</span>
+            <span class="text-[11px] text-muted-foreground">命中后回复自动脱敏</span>
           </div>
-          <span class="text-[11px] text-muted-foreground"
-            >已启用
+          <span class="text-[11px] text-muted-foreground">已启用
             <span class="font-semibold text-orange-600">{{
               form.desensitizeRules.filter((r) => r.enabled).length
-            }}</span
-            >
-            项</span
-          >
+            }}</span>
+            项</span>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
@@ -465,12 +458,8 @@ function handleCancel() {
       >
         <div class="mb-2 flex items-center justify-between">
           <div class="flex items-center gap-1.5">
-            <span class="text-[13px] font-medium text-blue-700 dark:text-blue-300"
-              >输出优化</span
-            >
-            <span class="text-[11px] text-muted-foreground"
-              >脱敏后对回复进行 LLM 二次优化</span
-            >
+            <span class="text-[13px] font-medium text-blue-700 dark:text-blue-300">输出优化</span>
+            <span class="text-[11px] text-muted-foreground">脱敏后对回复进行 LLM 二次优化</span>
           </div>
           <a-switch
             v-model:checked="form.outputOptimizationEnabled"
@@ -504,15 +493,32 @@ function handleCancel() {
       <div class="grid grid-cols-3 gap-3">
         <div>
           <label class="mb-1 block text-[12px] text-muted-foreground">温度</label>
-          <a-input-number v-model:value="form.temperature" :min="0" :max="2" :step="0.1" class="w-full" />
+          <a-input-number
+            v-model:value="form.temperature"
+            :min="0"
+            :max="2"
+            :step="0.1"
+            class="w-full"
+          />
         </div>
         <div>
           <label class="mb-1 block text-[12px] text-muted-foreground">Max Tokens</label>
-          <a-input-number v-model:value="form.maxTokens" :min="1024" :max="32768" :step="1024" class="w-full" />
+          <a-input-number
+            v-model:value="form.maxTokens"
+            :min="1024"
+            :max="32768"
+            :step="1024"
+            class="w-full"
+          />
         </div>
         <div>
           <label class="mb-1 block text-[12px] text-muted-foreground">最大迭代</label>
-          <a-input-number v-model:value="form.maxIterations" :min="1" :max="20" class="w-full" />
+          <a-input-number
+            v-model:value="form.maxIterations"
+            :min="1"
+            :max="20"
+            class="w-full"
+          />
         </div>
       </div>
 

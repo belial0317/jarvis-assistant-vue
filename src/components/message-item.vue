@@ -379,8 +379,9 @@ async function copyContent() {
         <div
           v-if="reasoningOpen"
           class="whitespace-pre-wrap border-t border-dashed border-border/60 px-2.5 py-1.5 leading-5"
-          >{{ message.reasoning }}</div
         >
+          {{ message.reasoning }}
+        </div>
       </div>
 
       <!-- 气泡 -->
@@ -393,7 +394,7 @@ async function copyContent() {
             : 'rounded-bl-sm border border-border bg-card text-foreground'
         "
       >
-        <div class="md-body" @click="onMdBodyClick" v-html="html"></div>
+        <div class="md-body" @click="onMdBodyClick" v-html="html" />
         <span v-if="streaming" class="cursor-blink">▋</span>
         <!-- T14-U14：流式跳秒徽章 -->
         <span
@@ -610,44 +611,44 @@ async function copyContent() {
         <div
           v-for="tc in message.toolCalls"
           :key="tc.id"
-        class="w-full overflow-hidden rounded-lg border border-border bg-card text-[12px]"
-      >
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 px-3 py-1.5 hover:bg-accent"
-          @click="toggle(tc.id)"
+          class="w-full overflow-hidden rounded-lg border border-border bg-card text-[12px]"
         >
-          <component
-            :is="TOOL_ICON[tc.status]"
-            class="h-3.5 w-3.5 flex-shrink-0"
-            :class="[TOOL_COLOR[tc.status], tc.status === 'running' ? 'animate-spin' : '']"
-          />
-          <span class="font-medium">{{ tc.name }}</span>
-          <span v-if="tc.serverName" class="text-muted-foreground">· {{ tc.serverName }}</span>
-          <span class="ml-auto flex items-center gap-2">
-            <span :class="TOOL_COLOR[tc.status]">
-              {{ TOOL_TEXT[tc.status] }}
-              <template v-if="tc.duration"> · {{ tc.duration }}ms</template>
-            </span>
-          </span>
-        </button>
-        <div v-if="expandedMap[tc.id]" class="space-y-1 border-t border-border bg-background-deep px-3 py-2">
-          <div class="flex gap-2">
-            <span class="text-muted-foreground">参数</span>
-            <code class="break-all text-[11px]">{{ JSON.stringify(tc.args) }}</code>
-          </div>
-          <div v-if="tc.result" class="flex gap-2">
-            <span class="text-muted-foreground">结果</span>
-            <!-- T21：注册渲染器优先（如 local_nl2sql → SqlResultTable），否则文本 -->
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 px-3 py-1.5 hover:bg-accent"
+            @click="toggle(tc.id)"
+          >
             <component
-              v-if="toolRendererFor(tc.name)"
-              :is="toolRendererFor(tc.name)!"
-              :result="parseToolResult(tc.result)"
+              :is="TOOL_ICON[tc.status]"
+              class="h-3.5 w-3.5 flex-shrink-0"
+              :class="[TOOL_COLOR[tc.status], tc.status === 'running' ? 'animate-spin' : '']"
             />
-            <span v-else>{{ tc.result }}</span>
+            <span class="font-medium">{{ tc.name }}</span>
+            <span v-if="tc.serverName" class="text-muted-foreground">· {{ tc.serverName }}</span>
+            <span class="ml-auto flex items-center gap-2">
+              <span :class="TOOL_COLOR[tc.status]">
+                {{ TOOL_TEXT[tc.status] }}
+                <template v-if="tc.duration"> · {{ tc.duration }}ms</template>
+              </span>
+            </span>
+          </button>
+          <div v-if="expandedMap[tc.id]" class="space-y-1 border-t border-border bg-background-deep px-3 py-2">
+            <div class="flex gap-2">
+              <span class="text-muted-foreground">参数</span>
+              <code class="break-all text-[11px]">{{ JSON.stringify(tc.args) }}</code>
+            </div>
+            <div v-if="tc.result" class="flex gap-2">
+              <span class="text-muted-foreground">结果</span>
+              <!-- T21：注册渲染器优先（如 local_nl2sql → SqlResultTable），否则文本 -->
+              <component
+                :is="toolRendererFor(tc.name)!"
+                v-if="toolRendererFor(tc.name)"
+                :result="parseToolResult(tc.result)"
+              />
+              <span v-else>{{ tc.result }}</span>
+            </div>
           </div>
         </div>
-      </div>
       </div>
 
       <!-- 错误 -->

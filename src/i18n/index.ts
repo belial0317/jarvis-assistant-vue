@@ -55,6 +55,15 @@ const zhCN: Record<string, string> = {
   'common.copy': '复制',
   'common.copied': '已复制',
   'common.regenerate': '重新生成',
+  // tasks-2609-1715-49 T5：SDK 升级提醒文案
+  'sdk.update.new': '新版本 v',
+  'sdk.update.close': '关闭本次提醒',
+  'sdk.about.title': '关于',
+  'sdk.about.current': '当前版本',
+  'sdk.about.latest': '最新版本',
+  'sdk.about.channel': 'SDK 渠道',
+  'sdk.about.channel.oss': '开源版',
+  'sdk.about.channel.commercial': '商业版',
 };
 
 const en: Record<string, string> = {
@@ -105,6 +114,15 @@ const en: Record<string, string> = {
   'common.copy': 'Copy',
   'common.copied': 'Copied',
   'common.regenerate': 'Regenerate',
+  // tasks-2609-1715-49 T5：SDK 升级提醒文案
+  'sdk.update.new': 'New version v',
+  'sdk.update.close': 'Dismiss this reminder',
+  'sdk.about.title': 'About',
+  'sdk.about.current': 'Current version',
+  'sdk.about.latest': 'Latest version',
+  'sdk.about.channel': 'SDK channel',
+  'sdk.about.channel.oss': 'Open source',
+  'sdk.about.channel.commercial': 'Commercial',
 };
 
 const dicts: Record<Locale, Record<string, string>> = {

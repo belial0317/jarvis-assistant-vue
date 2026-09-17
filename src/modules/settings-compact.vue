@@ -2,8 +2,15 @@
 import { createIconifyIcon } from '../providers/icons';
 import { message } from 'ant-design-vue';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, inject, onMounted, reactive, ref } from 'vue';
 import { fetchWhoami } from '../api/whoami';
+import {
+  SDK_UPDATE_KEY,
+  getSdkChannel,
+  getSdkPackage,
+  getSdkVersion,
+} from '../composables/use-sdk-update';
+import { t } from '../i18n';
 
 import {
   getAiApiKey,
@@ -46,12 +53,23 @@ const showApiKeyField = hostConfig.settings?.apiKeyVisible !== false
 
 defineOptions({ name: 'AiSettings' });
 
+// ===== SDK 升级提醒「关于」区块（tasks-2609-1715-49 T4，Edge 设置风格）=====
+const sdkUpdateState = inject(SDK_UPDATE_KEY, null);
+const sdkAbout = computed(() => ({
+  current: getSdkVersion(),
+  channel: getSdkChannel(),
+  pkg: getSdkPackage(),
+  latest: sdkUpdateState?.info.value?.latestVersion ?? null,
+  changelogUrl: sdkUpdateState?.info.value?.changelogUrl ?? null,
+}));
+
 const PaletteIcon = createIconifyIcon('lucide:palette');
 const MessageIcon = createIconifyIcon('lucide:message-square');
 const BellIcon = createIconifyIcon('lucide:bell');
 const KeyboardIcon = createIconifyIcon('lucide:keyboard');
 const TrashIcon = createIconifyIcon('lucide:trash-2');
 const ServerIcon = createIconifyIcon('lucide:server');
+const InfoIcon = createIconifyIcon('lucide:info');
 
 const settings = reactive({
   theme: 'system' as 'system' | 'light' | 'dark',
@@ -270,7 +288,7 @@ onMounted(() => {
     >
       <span class="text-[13px] font-medium">设置</span>
     </div>
-<!-- tasks-2609-1400-10：当前登录用户（服务端脱敏下发） -->
+    <!-- tasks-2609-1400-10：当前登录用户（服务端脱敏下发） -->
     <div
       v-if="whoami"
       class="flex items-center gap-2 border-b border-border bg-background px-4 py-2.5 text-[12px]"
@@ -353,39 +371,39 @@ onMounted(() => {
             </div>
           </template>
           <div :class="showServiceUrl ? 'mt-1.5' : ''" class="flex items-center gap-2">
-              <button
-                class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                :disabled="testing"
-                @click="testBackendConnection"
-              >
-                <component
-                  :is="ServerIcon"
-                  class="h-3 w-3"
-                  :class="testing ? 'animate-pulse' : ''"
-                />
-                {{ testing ? '测试中…' : '测试连接' }}
-              </button>
-              <span
-                v-if="backendStatus === 'ok'"
-                class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-600"
-              >
-                ● 连接正常<template v-if="health.latencyMs !== undefined">（{{ health.latencyMs }}ms）</template>
-              </span>
-              <span
-                v-else-if="backendStatus === 'error'"
-                class="inline-flex items-center gap-1 rounded bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-500"
-              >
-                ● 连接失败
-              </span>
-              <span v-else class="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-600">
-                ● 检测中…
-              </span>
-              <span
-                v-if="showServiceUrl"
-                class="text-[11px] text-muted-foreground"
-              >
-                当前：<code class="rounded bg-muted px-1 text-[10px]">{{ getAiBaseUrl() }}</code>
-              </span>
+            <button
+              class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              :disabled="testing"
+              @click="testBackendConnection"
+            >
+              <component
+                :is="ServerIcon"
+                class="h-3 w-3"
+                :class="testing ? 'animate-pulse' : ''"
+              />
+              {{ testing ? '测试中…' : '测试连接' }}
+            </button>
+            <span
+              v-if="backendStatus === 'ok'"
+              class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-600"
+            >
+              ● 连接正常<template v-if="health.latencyMs !== undefined">（{{ health.latencyMs }}ms）</template>
+            </span>
+            <span
+              v-else-if="backendStatus === 'error'"
+              class="inline-flex items-center gap-1 rounded bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-500"
+            >
+              ● 连接失败
+            </span>
+            <span v-else class="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-600">
+              ● 检测中…
+            </span>
+            <span
+              v-if="showServiceUrl"
+              class="text-[11px] text-muted-foreground"
+            >
+              当前：<code class="rounded bg-muted px-1 text-[10px]">{{ getAiBaseUrl() }}</code>
+            </span>
           </div>
           <div class="border-t border-border pt-2 text-[11px] leading-relaxed text-muted-foreground">
             <div>· 默认 <code class="rounded bg-muted px-1 text-[10px]">/ai-api</code>：经 vite proxy / 网关转发到后端</div>
@@ -641,6 +659,38 @@ onMounted(() => {
           >
             清空所有会话历史
           </button>
+        </div>
+      </div>
+
+      <!-- 关于（tasks-2609-1715-49 T4：当前版本/渠道/最新版本/变更日志，Edge 设置风格） -->
+      <div>
+        <div class="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground">
+          <component :is="InfoIcon" class="h-3.5 w-3.5" />
+          {{ t('sdk.about.title') }}
+        </div>
+        <div class="space-y-1.5 rounded-lg border border-border bg-card p-3 text-[12px]">
+          <div class="flex items-center justify-between">
+            <span class="text-muted-foreground">{{ t('sdk.about.current') }}</span>
+            <span class="font-mono">{{ sdkAbout.current }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-muted-foreground">{{ t('sdk.about.channel') }}</span>
+            <span class="font-mono">{{ sdkAbout.channel === 'commercial' ? t('sdk.about.channel.commercial') : t('sdk.about.channel.oss') }}</span>
+          </div>
+          <div v-if="sdkAbout.latest" class="flex items-center justify-between">
+            <span class="text-muted-foreground">{{ t('sdk.about.latest') }}</span>
+            <a
+              v-if="sdkAbout.changelogUrl"
+              :href="sdkAbout.changelogUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="font-mono text-primary underline underline-offset-2"
+            >{{ sdkAbout.latest }}</a>
+            <span v-else class="font-mono">{{ sdkAbout.latest }}</span>
+          </div>
+          <div class="border-t border-border pt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            {{ sdkAbout.pkg }}
+          </div>
         </div>
       </div>
     </div>

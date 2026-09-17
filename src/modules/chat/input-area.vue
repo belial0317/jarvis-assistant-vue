@@ -485,11 +485,11 @@ defineExpose({ focus: () => textareaRef.value?.focus() });
 
         <textarea
           ref="textareaRef"
-          @paste="onPaste"
           v-model="text"
           rows="1"
           placeholder="输入问题，Enter 发送 / Shift+Enter 换行；@ 引用上下文，/ 触发技能"
           class="max-h-[168px] min-h-[24px] flex-1 resize-none border-0 bg-transparent p-0 text-[13px] leading-6 outline-none placeholder:text-muted-foreground/60"
+          @paste="onPaste"
           @input="onInput"
           @keydown="onKeydown"
           @blur="onBlur"

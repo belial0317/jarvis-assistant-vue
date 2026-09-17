@@ -1,9 +1,15 @@
 name: Release
 
+# tasks-2609-1715-49 T6：版本号由 git tag + commit hash 驱动（用户决策）。
+# tag v0.2.0 @ commit abc1234 → 发布版本 0.2.0+abc1234（semver build metadata）。
+# tag 即版本唯一事实源，无 changesets 回写问题。
+# 约束：一个 tag 版本只能发布一次（npm 按 semver precedence 判重，忽略 build metadata），
+#       同版本修复必须出新 tag（v0.2.1）。
+
 on:
   push:
     tags:
-      - v*
+      - 'v*'
 
 jobs:
   release:
@@ -13,27 +19,52 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # 不指定 version：以 package.json packageManager 字段为准（pnpm@11.x）
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: pnpm
+          node-version: 22
           registry-url: https://registry.npmjs.org
+
+      - name: Validate tag & derive version
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag $TAG 不符合 semver（要求 vX.Y.Z）"
+            exit 1
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "VERSION=${TAG#v}+${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "TAG=${TAG}" >> "$GITHUB_OUTPUT"
+
+      # bump package.json（不回写仓库；tag 是版本唯一事实源）。
+      # 不用 npm version：其 semver 规范化会剥离 build metadata（+hash）。
+      - name: Set version
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.argv[1];fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')" "${{ steps.version.outputs.VERSION }}"
 
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # __SDK_VERSION__ 构建期从 package.json 注入（此时已是 tag+hash）
       - name: Build & Test
         run: pnpm build && pnpm test
 
-      - name: Changeset version
-        run: pnpm changeset version
-
       - name: Publish
-        run: pnpm changeset publish
+        run: pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # changelog_url（.../releases/tag/vX.Y.Z）指向的 Release：自动创建 + auto notes
+      - name: Create GitHub Release
+        run: |
+          gh release create "${{ steps.version.outputs.TAG }}" \
+            --generate-notes \
+            --title "v${{ steps.version.outputs.VERSION }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

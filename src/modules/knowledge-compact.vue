@@ -599,7 +599,7 @@ onMounted(() => {
       class="hidden"
       accept=".pdf,.docx,.txt,.md,.html,.json,.csv"
       @change="handleFileSelected"
-    >
+    />
 
     <a-drawer
       v-model:open="segmentDrawerOpen"
@@ -615,7 +615,7 @@ onMounted(() => {
             :key="i"
             class="h-3 animate-pulse rounded bg-accent"
             :style="{ width: i === 2 ? '65%' : '90%' }"
-          ></div>
+          />
         </div>
         <div v-else-if="segments.length === 0" class="py-8 text-center text-[12px] text-muted-foreground">
           暂无分段

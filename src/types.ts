@@ -414,7 +414,7 @@ export type SkillCategory =
    */
   | 'database-search'
   | 'custom'
-  | (string & {});
+  | string;
 
 /** Skill 参数（简化版 JSON Schema） */
 export interface SkillParameter {
@@ -493,7 +493,7 @@ export type DesensitizePresetKey =
  * - 自定义规则：key='custom' + enabled + label + pattern（正则）
  */
 export interface DesensitizeRule {
-  key: DesensitizePresetKey | (string & {});
+  key: DesensitizePresetKey | string;
   enabled: boolean;
   /** 自定义规则名称（预设规则可留空） */
   label?: string;

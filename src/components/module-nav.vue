@@ -110,7 +110,7 @@ function btnClass(key: AIModuleType) {
       </template>
     </a-tooltip>
 
-    <div class="my-1 h-px w-6 bg-border"></div>
+    <div class="my-1 h-px w-6 bg-border" />
 
     <a-tooltip
       v-for="m in systemModules"

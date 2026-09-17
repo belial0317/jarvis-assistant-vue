@@ -26,7 +26,7 @@ addCollection(lucideSubset);
  */
 export function createIconifyIcon(icon: string): Component {
   return defineComponent({
-    name: `AiAssistantIcon-${icon.replace(/[:\-]/g, '_')}`,
+    name: `AiAssistantIcon-${icon.replace(/[-:]/g, '_')}`,
     inheritAttrs: false,
     setup(_props, { attrs }) {
       return () =>

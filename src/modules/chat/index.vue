@@ -1341,8 +1341,8 @@ onUnmounted(() => {
           <!-- T15：骨架屏（替代"加载中..."文本） -->
           <div v-if="loadingSessions" class="space-y-2.5 px-1 py-2">
             <div v-for="i in 4" :key="i" class="animate-pulse">
-              <div class="mb-1.5 h-3 w-3/4 rounded bg-accent"></div>
-              <div class="h-2.5 w-1/2 rounded bg-accent"></div>
+              <div class="mb-1.5 h-3 w-3/4 rounded bg-accent" />
+              <div class="h-2.5 w-1/2 rounded bg-accent" />
             </div>
           </div>
           <template v-else>
@@ -1801,8 +1801,6 @@ onUnmounted(() => {
         :mcp-total="0"
       />
     </div>
-
-
   </div>
 </template>
 

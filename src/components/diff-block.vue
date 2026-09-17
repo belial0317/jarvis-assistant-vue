@@ -175,7 +175,7 @@ const statusBadge = computed(() => {
                 v-else-if="line.type === 'delete'"
                 class="text-red-600"
               >-</span>
-              <span v-else class="text-muted-foreground/40"> </span>
+              <span v-else class="text-muted-foreground/40" />
             </td>
             <!-- 行内容 -->
             <td class="whitespace-pre px-2 align-top">
@@ -217,7 +217,7 @@ const statusBadge = computed(() => {
                 :class="lineState(line.index) === 'accepted' ? 'text-emerald-600' : 'text-red-600'"
               />
             </td>
-            <td v-else class="w-[60px]"></td>
+            <td v-else class="w-[60px]" />
           </tr>
         </tbody>
       </table>
