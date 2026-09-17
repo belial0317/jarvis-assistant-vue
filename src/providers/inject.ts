@@ -7,7 +7,7 @@
  * 同时维护全局引用，使 API 层等非组件上下文也能获取配置。
  */
 
-import type { App, InjectionKey } from 'vue';
+import type { App, InjectionKey, Plugin } from 'vue';
 
 import { inject } from 'vue';
 
@@ -33,7 +33,7 @@ let globalConfig: AiAssistantConfig | null = null;
  *   auth: { getToken: () => store.accessToken },
  * }));
  */
-export function createAiAssistant(config: AiAssistantConfig) {
+export function createAiAssistant(config: AiAssistantConfig): Plugin {
   globalConfig = config;
   return {
     install(app: App) {
