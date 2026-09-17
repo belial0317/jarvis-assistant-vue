@@ -121,6 +121,21 @@ export interface AiAssistantConfig {
   models?: string[];
 
   /**
+   * SDK 升级提醒配置（tasks-2609-1715-49 T3，全可选向后兼容）。
+   * 数据源默认后端 /api-token/sdk-version；不提供时按构建期常量渠道检查。
+   */
+  sdk?: {
+    /** 渠道覆盖（默认取构建期 __SDK_CHANNEL__） */
+    channel?: 'oss' | 'commercial';
+    /** 升级检查端点覆盖（默认 /api-token/sdk-version） */
+    checkUrl?: string;
+    /** 变更日志地址覆盖（默认取服务端返回的 changelogUrl） */
+    changelogUrl?: string;
+    /** true=完全关闭升级提醒（检查与 UI 均不触发） */
+    disableCheck?: boolean;
+  };
+
+  /**
    * 宿主/门户下发的参数同步：组件挂载时写入设置存储（管理端配置为源）。
    * - baseURL → 设置项「服务地址」（ai_assistant_base_url）
    * - apiKey → 设置项「API Key」（ai_assistant_api_key）

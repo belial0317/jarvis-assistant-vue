@@ -5,6 +5,15 @@ import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 
+// SDK 版本信息构建期注入（tasks-2609-1715-49 T3）：
+// - __SDK_VERSION__：package.json version（CI 发布时已改写为 <tag>+<shortsha>，见 T6）
+// - __SDK_PACKAGE__：npm包名（不同渠道包名不同）
+// - __SDK_CHANNEL__：构建参数 SDK_CHANNEL，默认 oss；闭源商业版构建传 commercial
+const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')) as {
+  version: string;
+  name: string;
+};
+
 /**
  * 自定义插件：把 src/styles/*.css 当作静态资源 emit 到 dist
  *
@@ -30,6 +39,11 @@ function stylesEmitPlugin() {
 }
 
 export default defineConfig({
+  define: {
+    __SDK_VERSION__: JSON.stringify(pkg.version),
+    __SDK_PACKAGE__: JSON.stringify(pkg.name),
+    __SDK_CHANNEL__: JSON.stringify(process.env.SDK_CHANNEL ?? 'oss'),
+  },
   plugins: [
     vue(),
     stylesEmitPlugin(),
