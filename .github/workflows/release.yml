@@ -56,9 +56,12 @@ jobs:
         run: pnpm build && pnpm test
 
       - name: Publish
-        run: pnpm publish --no-git-checks
+        run: pnpm publish --no-git-checks --registry "${NPM_REGISTRY_URL:-https://registry.npmjs.org}"
         env:
+          # 私有 npm 仓库（如自部署 Nexus）：repo Secrets 配置 NPM_REGISTRY_URL（仓库地址）
+          # 与 NPM_TOKEN（该仓库认证 token）。未配置 NPM_REGISTRY_URL 时默认公共源。
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_REGISTRY_URL: ${{ secrets.NPM_REGISTRY_URL }}
 
       # changelog_url（.../releases/tag/vX.Y.Z）指向的 Release：自动创建 + auto notes
       - name: Create GitHub Release
