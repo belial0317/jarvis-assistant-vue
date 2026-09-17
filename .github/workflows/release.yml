@@ -23,8 +23,7 @@ jobs:
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # 不指定 version：以 package.json packageManager 字段为准（pnpm@11.x）
 
       - uses: actions/setup-node@v4
         with:
