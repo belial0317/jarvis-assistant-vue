@@ -288,7 +288,7 @@ onMounted(() => {
     >
       <span class="text-[13px] font-medium">设置</span>
     </div>
-<!-- tasks-2609-1400-10：当前登录用户（服务端脱敏下发） -->
+    <!-- tasks-2609-1400-10：当前登录用户（服务端脱敏下发） -->
     <div
       v-if="whoami"
       class="flex items-center gap-2 border-b border-border bg-background px-4 py-2.5 text-[12px]"
@@ -371,39 +371,39 @@ onMounted(() => {
             </div>
           </template>
           <div :class="showServiceUrl ? 'mt-1.5' : ''" class="flex items-center gap-2">
-              <button
-                class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                :disabled="testing"
-                @click="testBackendConnection"
-              >
-                <component
-                  :is="ServerIcon"
-                  class="h-3 w-3"
-                  :class="testing ? 'animate-pulse' : ''"
-                />
-                {{ testing ? '测试中…' : '测试连接' }}
-              </button>
-              <span
-                v-if="backendStatus === 'ok'"
-                class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-600"
-              >
-                ● 连接正常<template v-if="health.latencyMs !== undefined">（{{ health.latencyMs }}ms）</template>
-              </span>
-              <span
-                v-else-if="backendStatus === 'error'"
-                class="inline-flex items-center gap-1 rounded bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-500"
-              >
-                ● 连接失败
-              </span>
-              <span v-else class="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-600">
-                ● 检测中…
-              </span>
-              <span
-                v-if="showServiceUrl"
-                class="text-[11px] text-muted-foreground"
-              >
-                当前：<code class="rounded bg-muted px-1 text-[10px]">{{ getAiBaseUrl() }}</code>
-              </span>
+            <button
+              class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              :disabled="testing"
+              @click="testBackendConnection"
+            >
+              <component
+                :is="ServerIcon"
+                class="h-3 w-3"
+                :class="testing ? 'animate-pulse' : ''"
+              />
+              {{ testing ? '测试中…' : '测试连接' }}
+            </button>
+            <span
+              v-if="backendStatus === 'ok'"
+              class="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-600"
+            >
+              ● 连接正常<template v-if="health.latencyMs !== undefined">（{{ health.latencyMs }}ms）</template>
+            </span>
+            <span
+              v-else-if="backendStatus === 'error'"
+              class="inline-flex items-center gap-1 rounded bg-red-500/10 px-1.5 py-0.5 text-[11px] text-red-500"
+            >
+              ● 连接失败
+            </span>
+            <span v-else class="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-600">
+              ● 检测中…
+            </span>
+            <span
+              v-if="showServiceUrl"
+              class="text-[11px] text-muted-foreground"
+            >
+              当前：<code class="rounded bg-muted px-1 text-[10px]">{{ getAiBaseUrl() }}</code>
+            </span>
           </div>
           <div class="border-t border-border pt-2 text-[11px] leading-relaxed text-muted-foreground">
             <div>· 默认 <code class="rounded bg-muted px-1 text-[10px]">/ai-api</code>：经 vite proxy / 网关转发到后端</div>

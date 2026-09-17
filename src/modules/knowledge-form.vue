@@ -291,11 +291,23 @@ function handleCancel() {
           </div>
           <div>
             <label class="mb-1 block text-[11px] text-muted-foreground">最大分块（tokens）</label>
-            <a-input-number v-model:value="form.maxTokens" :min="128" :max="4096" :step="64" class="w-full" />
+            <a-input-number
+              v-model:value="form.maxTokens"
+              :min="128"
+              :max="4096"
+              :step="64"
+              class="w-full"
+            />
           </div>
           <div>
             <label class="mb-1 block text-[11px] text-muted-foreground">重叠（tokens）</label>
-            <a-input-number v-model:value="form.chunkOverlap" :min="0" :max="512" :step="16" class="w-full" />
+            <a-input-number
+              v-model:value="form.chunkOverlap"
+              :min="0"
+              :max="512"
+              :step="16"
+              class="w-full"
+            />
           </div>
         </div>
       </div>
@@ -313,7 +325,12 @@ function handleCancel() {
           </div>
           <div>
             <label class="mb-1 block text-[11px] text-muted-foreground">Top-K</label>
-            <a-input-number v-model:value="form.topK" :min="1" :max="20" class="w-full" />
+            <a-input-number
+              v-model:value="form.topK"
+              :min="1"
+              :max="20"
+              class="w-full"
+            />
           </div>
           <div class="col-span-2 flex items-center gap-2">
             <label class="flex cursor-pointer items-center gap-1.5 text-[12px]">
@@ -358,7 +375,7 @@ function handleCancel() {
           multiple
           accept=".pdf,.docx,.txt,.md,.html,.json,.csv"
           @change="handleFileSelected"
-        >
+        />
         <div v-if="selectedFiles.length > 0" class="mt-2 space-y-1">
           <div
             v-for="(file, index) in selectedFiles"

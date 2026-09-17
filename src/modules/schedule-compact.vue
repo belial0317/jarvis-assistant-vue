@@ -340,19 +340,44 @@ import { createSchedule, updateSchedule } from '../api/schedule';
         <div class="rounded-lg border border-border p-3">
           <div class="mb-2 flex items-center gap-3 text-[12px]">
             <label class="flex items-center gap-1">
-              <input v-model="freq" type="radio" value="daily" class="accent-primary" /> 每天
+              <input
+                v-model="freq"
+                type="radio"
+                value="daily"
+                class="accent-primary"
+              /> 每天
             </label>
             <label class="flex items-center gap-1">
-              <input v-model="freq" type="radio" value="weekly" class="accent-primary" /> 每周
+              <input
+                v-model="freq"
+                type="radio"
+                value="weekly"
+                class="accent-primary"
+              /> 每周
             </label>
             <label class="flex items-center gap-1">
-              <input v-model="freq" type="radio" value="monthly" class="accent-primary" /> 每月
+              <input
+                v-model="freq"
+                type="radio"
+                value="monthly"
+                class="accent-primary"
+              /> 每月
             </label>
             <label class="flex items-center gap-1">
-              <input v-model="freq" type="radio" value="once" class="accent-primary" /> 定点一次
+              <input
+                v-model="freq"
+                type="radio"
+                value="once"
+                class="accent-primary"
+              /> 定点一次
             </label>
             <label class="flex items-center gap-1">
-              <input v-model="freq" type="radio" value="custom" class="accent-primary" /> 自定义 cron
+              <input
+                v-model="freq"
+                type="radio"
+                value="custom"
+                class="accent-primary"
+              /> 自定义 cron
             </label>
           </div>
 

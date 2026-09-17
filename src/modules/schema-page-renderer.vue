@@ -199,12 +199,16 @@ async function submitForm(section: Extract<SchemaSection, { type: 'form' }>) {
           </button>
           <div v-if="formResult?.asTable" class="mt-3 overflow-auto">
             <table class="w-full text-[12px]">
-              <thead><tr class="border-b border-border text-left text-[11px] text-muted-foreground">
-                <th v-for="c in formResult.columns" :key="c" class="px-2 py-1 font-medium">{{ c }}</th>
-              </tr></thead>
-              <tbody><tr v-for="(row, ri) in formResult.rows" :key="ri" class="border-b border-border/50 last:border-none">
-                <td v-for="(cell, ci) in row" :key="ci" class="px-2 py-1">{{ cell }}</td>
-              </tr></tbody>
+              <thead>
+                <tr class="border-b border-border text-left text-[11px] text-muted-foreground">
+                  <th v-for="c in formResult.columns" :key="c" class="px-2 py-1 font-medium">{{ c }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, ri) in formResult.rows" :key="ri" class="border-b border-border/50 last:border-none">
+                  <td v-for="(cell, ci) in row" :key="ci" class="px-2 py-1">{{ cell }}</td>
+                </tr>
+              </tbody>
             </table>
           </div>
           <pre v-else-if="formResult?.text" class="mt-3 max-h-60 overflow-auto rounded-md bg-muted/40 p-2 text-[11px] leading-relaxed">{{ formResult.text }}</pre>

@@ -207,9 +207,9 @@ const pieLabels = computed(() => {
     <!-- 图表视图 -->
     <div v-if="viewMode === 'chart' && canShowChart" class="chart-container">
       <!-- 柱状图 -->
-      <div v-if="chartType === 'bar'" v-html="barChartSvg" class="chart-svg" />
+      <div v-if="chartType === 'bar'" class="chart-svg" v-html="barChartSvg" />
       <!-- 折线图 -->
-      <div v-else-if="chartType === 'line'" v-html="lineChartSvg" class="chart-svg" />
+      <div v-else-if="chartType === 'line'" class="chart-svg" v-html="lineChartSvg" />
       <!-- 饼图 -->
       <div v-else-if="chartType === 'pie'" class="pie-wrapper">
         <div class="pie-chart" :style="pieChartStyle" />

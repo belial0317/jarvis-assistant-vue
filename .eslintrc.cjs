@@ -47,6 +47,10 @@ module.exports = {
     }],
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-non-null-assertion': 'warn',
+    // REST API enum：LIST/SAVE/DELETE 同路径是常见设计（方法区分），非重复定义
+    '@typescript-eslint/no-duplicate-enum-values': 'off',
+    // extractSSEEvents 的 while(true)+break 循环哨兵模式合法
+    'no-constant-condition': ['error', { checkLoops: false }],
     // 通用
     'no-console': ['warn', { allow: ['warn', 'error'] }],
     'no-debugger': 'warn',

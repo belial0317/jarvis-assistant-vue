@@ -174,29 +174,29 @@ watch(
     </div>
   </div>
 
-<!-- T19：新手引导浮层（任务门控式） -->
-<div
-  v-if="tourState.active && tourState.step < TOUR_STEPS.length"
-  class="fixed bottom-16 left-1/2 z-[3000] w-[300px] -translate-x-1/2 rounded-xl border border-border bg-card p-3 shadow-lg"
->
-  <div class="mb-1 flex items-center justify-between">
-    <span class="text-[12px] font-medium">
-      {{ TOUR_STEPS[tourState.step].title }}（{{ tourState.step + 1 }}/{{ TOUR_STEPS.length }}）
-    </span>
-    <button class="text-[10px] text-muted-foreground hover:text-foreground" @click="markTourDone()">
-      跳过
-    </button>
+  <!-- T19：新手引导浮层（任务门控式） -->
+  <div
+    v-if="tourState.active && tourState.step < TOUR_STEPS.length"
+    class="fixed bottom-16 left-1/2 z-[3000] w-[300px] -translate-x-1/2 rounded-xl border border-border bg-card p-3 shadow-lg"
+  >
+    <div class="mb-1 flex items-center justify-between">
+      <span class="text-[12px] font-medium">
+        {{ TOUR_STEPS[tourState.step].title }}（{{ tourState.step + 1 }}/{{ TOUR_STEPS.length }}）
+      </span>
+      <button class="text-[10px] text-muted-foreground hover:text-foreground" @click="markTourDone()">
+        跳过
+      </button>
+    </div>
+    <p class="text-[11px] leading-4 text-muted-foreground">
+      {{ TOUR_STEPS[tourState.step].description }}
+    </p>
+    <div class="mt-2 flex gap-1">
+      <span
+        v-for="st in TOUR_STEPS"
+        :key="st.id"
+        class="h-1 flex-1 rounded"
+        :class="st.id <= tourState.step ? 'bg-primary' : 'bg-muted'"
+      />
+    </div>
   </div>
-  <p class="text-[11px] leading-4 text-muted-foreground">
-    {{ TOUR_STEPS[tourState.step].description }}
-  </p>
-  <div class="mt-2 flex gap-1">
-    <span
-      v-for="st in TOUR_STEPS"
-      :key="st.id"
-      class="h-1 flex-1 rounded"
-      :class="st.id <= tourState.step ? 'bg-primary' : 'bg-muted'"
-    />
-  </div>
-</div>
 </template>

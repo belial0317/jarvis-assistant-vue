@@ -303,11 +303,21 @@ function handleCancel() {
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="mb-1 block text-[12px] text-muted-foreground">请求超时（秒）</label>
-          <a-input-number v-model:value="form.timeout" :min="5" :max="300" class="w-full" />
+          <a-input-number
+            v-model:value="form.timeout"
+            :min="5"
+            :max="300"
+            class="w-full"
+          />
         </div>
         <div>
           <label class="mb-1 block text-[12px] text-muted-foreground">SSE 读取超时（秒）</label>
-          <a-input-number v-model:value="form.sseReadTimeout" :min="30" :max="3600" class="w-full" />
+          <a-input-number
+            v-model:value="form.sseReadTimeout"
+            :min="30"
+            :max="3600"
+            class="w-full"
+          />
         </div>
       </div>
 
