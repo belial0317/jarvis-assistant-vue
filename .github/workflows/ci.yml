@@ -34,6 +34,11 @@ jobs:
 
   gitleaks:
     runs-on: ubuntu-latest
+    # gitleaks-action 需上传 SARIF/创建 issue：GITHUB_TOKEN 默认只读会报
+    # "Resource not accessible by integration"（PR 事件下实测失败）
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
         with:
