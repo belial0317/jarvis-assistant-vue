@@ -11,6 +11,7 @@ import { Drawer as ADrawer, Tooltip as ATooltip } from 'ant-design-vue';
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 
 import AiAssistantContent from './content.vue';
+import { t } from './i18n';
 
 import {
   checkBackendHealth,
@@ -105,9 +106,14 @@ const health = useBackendHealth();
 
 // ===== SDK 升级提醒（tasks-2609-1715-49 T4）=====
 // 检查时机（用户决策）：首次加载组件 + 每次打开面板各一次；in-flight 去重（T3）。
-// 状态经 provide 下发：chat 头部红字 / settings「关于」消费；console 提醒仅输出一次。
+// 状态经 provide 下发：抽屉头部标题栏 / settings「关于」消费；console 提醒仅输出一次。
 const sdkUpdate = ref<SdkUpdateInfo | null>(null);
-provide(SDK_UPDATE_KEY, { info: sdkUpdate, dismiss: dismissSdkNotice });
+const sdkNoticeDismissed = ref(isSdkNoticeDismissed());
+function dismissSdkNoticeLocal(): void {
+  sdkNoticeDismissed.value = true;
+  dismissSdkNotice();
+}
+provide(SDK_UPDATE_KEY, { info: sdkUpdate, dismiss: dismissSdkNoticeLocal });
 
 async function runSdkUpdateCheck() {
   const info = await checkSdkUpdate();
@@ -313,6 +319,28 @@ defineExpose({
             <component :is="SparklesIcon" class="h-3.5 w-3.5" />
           </div>
           <span class="text-[13px] font-medium">AI 助手</span>
+          <!-- SDK 升级提醒（tasks-2609-1715-49 T4）：闪烁红点 + 红字，点击直达对应版本 Release；changelogUrl 为空降级纯文案 -->
+          <span
+            v-if="sdkUpdate && !sdkNoticeDismissed"
+            class="flex items-center gap-1 text-[12px] text-red-500"
+          >
+            <span class="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
+            <a
+              v-if="sdkUpdate.changelogUrl"
+              :href="sdkUpdate.changelogUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="font-medium underline underline-offset-2 hover:text-red-600"
+            >{{ t('sdk.update.new') }}{{ sdkUpdate.latestVersion }}</a>
+            <span v-else class="font-medium">{{ t('sdk.update.new') }}{{ sdkUpdate.latestVersion }}</span>
+            <button
+              class="flex h-4 w-4 items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-600"
+              :title="t('sdk.update.close')"
+              @click="dismissSdkNoticeLocal"
+            >
+              <component :is="XIcon" class="h-3 w-3" />
+            </button>
+          </span>
         </div>
         <button
           class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
