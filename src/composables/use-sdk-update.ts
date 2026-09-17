@@ -6,6 +6,8 @@
  * in-flight Promise 去重避免触发点重叠重复请求。
  * 静默失败：无后端/未鉴权/网络错误/非法版本 → null，不打扰用户。
  */
+import type { InjectionKey, Ref } from 'vue';
+
 import { aiRequestClient } from '../api/client';
 import { useAiAssistantConfig } from '../providers/inject';
 
@@ -16,6 +18,18 @@ export interface SdkUpdateInfo {
   /** 对应版本 GitHub Release 地址；null=无链接（UI 降级为纯文案） */
   changelogUrl: string | null;
 }
+
+/** SDK 升级提醒共享状态（component.vue provide / chat·settings inject） */
+export interface SdkUpdateState {
+  info: Ref<SdkUpdateInfo | null>;
+  /** 关闭本次提醒（sessionStorage 按版本记录，新版本发布后重新提醒） */
+  dismiss: () => void;
+}
+
+export const SDK_UPDATE_KEY: InjectionKey<SdkUpdateState> = Symbol('sdk-update');
+
+/** sessionStorage 关闭标记键 */
+const DISMISS_KEY = 'ai_assistant_sdk_update_dismissed';
 
 /** semver x.y.z 校验（支持 build metadata +hash，不支持预发布段） */
 const SEMVER_RE = /^\d+\.\d+\.\d+/;
@@ -37,6 +51,24 @@ export function getSdkChannel(): 'oss' | 'commercial' {
 /** npm包名 */
 export function getSdkPackage(): string {
   return typeof __SDK_PACKAGE__ !== 'undefined' ? __SDK_PACKAGE__ : '@jarvis/ai-assistant';
+}
+
+/** 当前版本是否已被用户关闭提醒（sessionStorage，按版本记录） */
+export function isSdkNoticeDismissed(): boolean {
+  try {
+    return sessionStorage.getItem(DISMISS_KEY) === getSdkVersion();
+  } catch {
+    return false;
+  }
+}
+
+/** 关闭本次提醒（仅当前会话；新版本发布后重新提醒） */
+export function dismissSdkNotice(): void {
+  try {
+    sessionStorage.setItem(DISMISS_KEY, getSdkVersion());
+  } catch {
+    // sessionStorage 不可用（隐私模式等）：静默忽略
+  }
 }
 
 /**

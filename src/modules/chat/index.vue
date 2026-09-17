@@ -49,6 +49,11 @@ import StatusBar from '../../components/status-bar.vue';
 import InputArea from './input-area.vue';
 import { useAiAssistantConfig } from '../../providers';
 import { AI_ASSISTANT_HOST_CONTEXT_KEY } from '../../providers/host-context';
+import { t } from '../../i18n';
+import {
+  SDK_UPDATE_KEY,
+  isSdkNoticeDismissed,
+} from '../../composables/use-sdk-update';
 
 defineOptions({ name: 'AiChatWorkbench' });
 
@@ -60,6 +65,14 @@ defineEmits<{
 const config = useAiAssistantConfig();
 // T6:宿主业务上下文(权威感知源;未注入为 null,不伪造默认值)
 const hostContextStore = inject(AI_ASSISTANT_HOST_CONTEXT_KEY, null);
+
+// ===== SDK 升级提醒（tasks-2609-1715-49 T4）：头部红字状态由 component.vue provide =====
+const sdkUpdateState = inject(SDK_UPDATE_KEY, null);
+const sdkNoticeDismissed = ref(isSdkNoticeDismissed());
+function dismissSdkNoticeLocal(): void {
+  sdkNoticeDismissed.value = true;
+  sdkUpdateState?.dismiss();
+}
 
 // ===== S5/T4:感知总开关(用户偏好持久化;宿主 config.perception.defaultEnabled 决定缺省) =====
 const PERCEPTION_ENABLED_KEY = 'ai_assistant_perception_enabled';
@@ -91,6 +104,7 @@ function toggleMultiExpert() {
   }
 }
 const PinIcon = createIconifyIcon('lucide:pin');
+const XIcon = createIconifyIcon('lucide:x');
 const PinOffIcon = createIconifyIcon('lucide:pin-off');
 const PencilIcon = createIconifyIcon('lucide:pencil');
 const SearchIcon = createIconifyIcon('lucide:search');
@@ -1529,6 +1543,27 @@ onUnmounted(() => {
               :class="insightSummary ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'"
             >{{ displayTitle }}</span>
           </template>
+        </div>
+        <!-- SDK 升级提醒（tasks-2609-1715-49 T4）：红字可点击直达对应版本 Release；changelogUrl 为空降级纯文案 -->
+        <div
+          v-if="sdkUpdateState?.info.value && !sdkNoticeDismissed"
+          class="flex flex-shrink-0 items-center gap-1 text-[12px] text-red-500"
+        >
+          <a
+            v-if="sdkUpdateState.info.value.changelogUrl"
+            :href="sdkUpdateState.info.value.changelogUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium underline underline-offset-2 hover:text-red-600"
+          >{{ t('sdk.update.new') }}{{ sdkUpdateState.info.value.latestVersion }}</a>
+          <span v-else class="font-medium">{{ t('sdk.update.new') }}{{ sdkUpdateState.info.value.latestVersion }}</span>
+          <button
+            class="flex h-4 w-4 items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-600"
+            :title="t('sdk.update.close')"
+            @click="dismissSdkNoticeLocal"
+          >
+            <component :is="XIcon" class="h-3 w-3" />
+          </button>
         </div>
         <!-- S5/T4:感知开关(雷达图标;关=划线灰) -->
         <button

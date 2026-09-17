@@ -17,6 +17,14 @@ import {
   useBackendHealth,
 } from './composables/use-backend-health';
 import { applySyncParams } from './composables/use-settings-sync';
+import {
+  SDK_UPDATE_KEY,
+  checkSdkUpdate,
+  dismissSdkNotice,
+  getSdkVersion,
+  isSdkNoticeDismissed,
+  type SdkUpdateInfo,
+} from './composables/use-sdk-update';
 
 import { pagePerception } from './perception/manager';
 
@@ -95,6 +103,22 @@ const XIcon = createIconifyIcon('lucide:x');
 const open = ref(false);
 const health = useBackendHealth();
 
+// ===== SDK 升级提醒（tasks-2609-1715-49 T4）=====
+// 检查时机（用户决策）：首次加载组件 + 每次打开面板各一次；in-flight 去重（T3）。
+// 状态经 provide 下发：chat 头部红字 / settings「关于」消费；console 提醒仅输出一次。
+const sdkUpdate = ref<SdkUpdateInfo | null>(null);
+provide(SDK_UPDATE_KEY, { info: sdkUpdate, dismiss: dismissSdkNotice });
+
+async function runSdkUpdateCheck() {
+  const info = await checkSdkUpdate();
+  if (info && !sdkUpdate.value) {
+    sdkUpdate.value = info;
+    console.info(
+      `[jarvis-ai-assistant] ${getSdkVersion()} → ${info.latestVersion} 可用：${info.changelogUrl ?? '见变更日志'}`,
+    );
+  }
+}
+
 // ===== T16：抽屉形态（宽度可拖拽 560-960 记忆 / 窄屏全屏） =====
 const isNarrow = ref(typeof window !== 'undefined' && window.innerWidth < 768);
 const drawerWidthPx = ref(560);
@@ -166,6 +190,8 @@ function toggle() {
 watch(open, (isOpen) => {
   if (isOpen) {
     void checkBackendHealth();
+    // 每次打开面板检查一次 SDK 升级（首次加载在 onMounted）
+    void runSdkUpdateCheck();
   }
   // 感知管线联动：抽屉关闭暂停 DOM 观察（省 CPU），打开恢复并重采集
   pagePerception.setActive(isOpen);
@@ -174,6 +200,8 @@ watch(open, (isOpen) => {
 // ===== PP2 感知管线挂接：路由监听 + 可见性门控 =====
 // 挂载即启动（与抽屉开关无关：页面感知服务于会话上下文，抽屉仅门控观察）
 onMounted(() => {
+  // 首次加载组件：检查一次 SDK 升级
+  void runSdkUpdateCheck();
   pagePerception.start(resolvedConfig.route, resolvedConfig.mainContentSelector);
   // T16：窄屏视口监听（<768px 全屏宽度）
   const onResize = () => {
