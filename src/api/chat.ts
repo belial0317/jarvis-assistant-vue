@@ -16,7 +16,7 @@
 import type { ChatMessage } from '../types';
 import type { HostBusinessContext } from '../providers/config';
 
-import { aiRequestClient } from './client';
+import { aiRequestClient, fetchBlob } from './client';
 import { ChatApi, path } from './endpoints';
 
 /** 后端返回的 ChatSessionVO（不含 messages） */
@@ -240,16 +240,40 @@ export function streamMessage(
   );
 }
 
-/** T24：附件上传（粘贴/选择的真实通道） */
+/** T24/T13：附件上传（粘贴/选择的真实通道；T8后需携带会话并返回鉴权下载信息） */
 export function uploadFile(
   file: File,
+  sessionId: string,
   signal?: AbortSignal,
-): Promise<{ name: string; url: string; size: number }> {
+): Promise<{
+  attachmentId: string;
+  name: string;
+  size: number;
+  mimeType?: string;
+  sha256?: string;
+  downloadUrl?: string;
+}> {
   const fd = new FormData();
   fd.append('file', file);
-  return aiRequestClient.post('/chat/upload', fd, {
-    signal,
-  }) as Promise<{ name: string; url: string; size: number }>;
+  fd.append('sessionId', sessionId);
+  return aiRequestClient.post('/chat/upload', fd, { signal }) as Promise<{
+  attachmentId: string;
+  name: string;
+  size: number;
+}>;
+}
+
+/** T13：鉴权下载产物并保存 */
+export async function downloadArtifact(artifactId: string, fileName?: string): Promise<void> {
+  const blob = await fetchBlob(`/chat/artifacts/${artifactId}/download`);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName || `artifact-${artifactId}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** T27：恢复最近一次挂起运行（返回 assistant 消息） */

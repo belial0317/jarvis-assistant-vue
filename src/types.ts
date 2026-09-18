@@ -82,6 +82,28 @@ export interface ToolCall {
   status: ToolStatus;
   /** 耗时（ms） */
   duration?: number;
+  /** T13：文档工具产物（result JSON 含 artifactId 时解析） */
+  artifact?: ArtifactInfo;
+}
+
+/** T13：AI 生成产物（鉴权下载，不用 read_file 替代） */
+export interface ArtifactInfo {
+  artifactId: string;
+  fileName: string;
+  mimeType?: string;
+  size?: number;
+  downloadUrl?: string;
+}
+
+/** T13：附件解析状态（attachment_status 事件） */
+export interface AttachmentStatus {
+  attachmentId: string;
+  status: string;
+  ocrUsed?: boolean;
+  engine?: string;
+  pages?: number;
+  docId?: string;
+  error?: string;
 }
 
 /** 上下文条目（@ 引用） */
@@ -97,6 +119,10 @@ export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
+  /** T13：该条消息关联的 AI 产物列表 */
+  artifacts?: ArtifactInfo[];
+  /** T13：附件解析状态 */
+  attachmentStatus?: AttachmentStatus;
   /** 推理过程（thinking），默认折叠 */
   reasoning?: string;
   toolCalls?: ToolCall[];
@@ -233,7 +259,9 @@ export interface StreamChunk {
     | 'tool_approval'
     | 'tool_call'
     | 'tool_call_delta' // ⏳ T8 工具调用参数增量
-    | 'tool_result';
+    | 'tool_result'
+    | 'attachment_status' // T13：附件解析/OCR/入库状态
+    | 'artifact_created'; // T13：AI 产物登记
   // ---- T1 统一事件包络元数据（所有 chunk 均携带，旧后端缺失时为空） ----
   /** 事件唯一 ID（UUID） */
   eventId?: string;
@@ -245,6 +273,10 @@ export interface StreamChunk {
   text?: string;
   /** tool_call / tool_result: 工具调用信息 */
   toolCall?: ToolCall;
+  /** attachment_status: 附件解析状态 */
+  attachmentStatus?: AttachmentStatus;
+  /** artifact_created: AI 产物信息 */
+  artifact?: ArtifactInfo;
   /** tool_approval: 工具调用审批请求 */
   toolApproval?: ToolApprovalRequest;
   /** diff: 文件修改 diff 块 */

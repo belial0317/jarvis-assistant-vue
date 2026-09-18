@@ -967,7 +967,41 @@ async function onSend(text: string) {
                 tc.result = chunk.toolCall.result;
                 tc.status = chunk.toolCall.status;
                 tc.duration = chunk.toolCall.duration;
+                // T13：文档工具结果 JSON 含 artifactId → 解析为产物卡片
+                try {
+                  const parsed = JSON.parse(tc.result ?? '{}');
+                  if (parsed?.artifactId) {
+                    tc.artifact = parsed;
+                    if (!reactiveAssistant.artifacts) {
+                      reactiveAssistant.artifacts = [];
+                    }
+                    if (!reactiveAssistant.artifacts.some((a) => a.artifactId === parsed.artifactId)) {
+                      reactiveAssistant.artifacts.push(parsed);
+                    }
+                  }
+                } catch {
+                  // 非 JSON 结果忽略
+                }
               }
+            }
+            break;
+          }
+          case 'attachment_status': {
+            if (chunk.attachmentStatus) {
+              reactiveAssistant.attachmentStatus = chunk.attachmentStatus;
+              scrollToBottom();
+            }
+            break;
+          }
+          case 'artifact_created': {
+            if (chunk.artifact) {
+              if (!reactiveAssistant.artifacts) {
+                reactiveAssistant.artifacts = [];
+              }
+              if (!reactiveAssistant.artifacts.some((a) => a.artifactId === chunk.artifact!.artifactId)) {
+                reactiveAssistant.artifacts.push(chunk.artifact);
+              }
+              scrollToBottom();
             }
             break;
           }
@@ -1783,6 +1817,7 @@ onUnmounted(() => {
         :context="context"
         :model-id="activeSession?.modelId"
         :model-options="modelOptions"
+        :session-id="activeSession?.id"
         @send="onSend"
         @stop="onStop"
         @retry="onRetry"

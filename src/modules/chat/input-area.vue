@@ -20,6 +20,8 @@ const props = defineProps<{
   /** 当前选中的模型 ID（与 modelOptions 的 value 对齐），空串表示未选中 */
   modelId?: string;
   modelOptions?: Array<{ label: string; value: string }>;
+  /** T13：当前会话 ID（附件上传登记归属） */
+  sessionId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -227,12 +229,12 @@ async function handleFiles(files: FileList | null) {
     };
     emit('update:context', [...(props.context ?? []), placeholder]);
     try {
-      const res = await uploadFile(file);
+      const res = await uploadFile(file, props.sessionId ?? '');
       emit(
         'update:context',
         (props.context ?? []).map((c) =>
           c.id === id
-            ? { ...c, label: `${res.name} (${formatSize(res.size)})`, ref: res.url }
+            ? { ...c, label: `${res.name} (${formatSize(res.size)})`, ref: res.downloadUrl ?? `/ai-api/chat/attachments/${res.attachmentId}/download` }
             : c,
         ),
       );

@@ -441,6 +441,16 @@ async function doStream(
 
 // ===== 公开 API：aiRequestClient =====
 
+/** T13：鉴权下载二进制（附件/产物），返回 Blob；非 OK 显式抛错 */
+export async function fetchBlob(url: string): Promise<Blob> {
+  const baseURL = resolveBaseURL();
+  const response = await fetch(buildUrl(baseURL, url), { headers: buildHeaders() });
+  if (!response.ok) {
+    throw new Error(`下载失败: HTTP ${response.status}`);
+  }
+  return response.blob();
+}
+
 /** ETag 版本化 GET 的结果（PP3 manifest 拉取专用） */
 export interface EtagResult<T> {
   /** true = 服务端 304，内容未变，沿用本地缓存 */

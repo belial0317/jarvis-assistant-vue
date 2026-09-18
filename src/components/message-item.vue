@@ -12,6 +12,8 @@ import type {
 } from '../types';
 
 import { renderMarkdown } from './markdown';
+import { downloadArtifact } from '../api/chat';
+import { message as antMessage } from 'ant-design-vue';
 import { getToolRenderer } from './tool-renderers';
 import { h } from 'vue';
 import DiffBlock from './diff-block.vue';
@@ -64,6 +66,35 @@ const isAssistant = computed(() => props.message.role === 'assistant');
 const streaming = computed(() => props.message.status === 'streaming');
 const pending = computed(() => props.message.status === 'pending');
 const html = computed(() => renderMarkdown(props.message.content));
+
+/** T13：产物列表（消息级 + 工具解析产物） */
+const artifacts = computed(() => props.message.artifacts ?? []);
+
+/** T13：附件解析状态文案 */
+const attachmentStatusText = computed(() => {
+  const s = props.message.attachmentStatus;
+  if (!s) return '';
+  if (s.status === 'parsing') return '解析中…';
+  if (s.status === 'indexed') return `已入库知识库${s.docId ? `（文档 ${s.docId}）` : ''}`;
+  if (s.status === 'ready') return `完成${s.ocrUsed ? `（OCR ${s.pages ?? 0} 页）` : ''}`;
+  if (s.status === 'failed') return `失败${s.error ? `：${s.error}` : ''}`;
+  return s.status;
+});
+
+/** T13：鉴权下载产物 */
+async function onDownload(a: { artifactId: string; fileName?: string }) {
+  try {
+    await downloadArtifact(a.artifactId, a.fileName);
+  } catch (e: any) {
+    antMessage.error(`下载失败: ${e?.message ?? '未知错误'}`);
+  }
+}
+
+function formatSize(size: number): string {
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  if (size >= 1024) return `${(size / 1024).toFixed(0)} KB`;
+  return `${size} B`;
+}
 
 // ===== T14-U13：思考折叠块（流式展开 + 0.1s 精度计时；完成后自动折叠） =====
 const reasoningOpen = ref(true);
@@ -395,6 +426,33 @@ async function copyContent() {
         "
       >
         <div class="md-body" @click="onMdBodyClick" v-html="html" />
+        <!-- T13：附件解析状态 -->
+        <div
+          v-if="message.attachmentStatus"
+          class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+          附件解析：{{ attachmentStatusText }}
+        </div>
+        <!-- T13：AI 产物卡片（鉴权下载） -->
+        <div v-if="artifacts.length" class="mt-2 space-y-1.5">
+          <div
+            v-for="a in artifacts"
+            :key="a.artifactId"
+            class="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5"
+          >
+            <span class="min-w-0 flex-1 truncate text-[12px]">{{ a.fileName }}</span>
+            <span v-if="a.size" class="flex-shrink-0 text-[10px] text-muted-foreground">
+              {{ formatSize(a.size) }}
+            </span>
+            <button
+              class="flex-shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] hover:border-primary/40 hover:text-primary"
+              @click.stop="onDownload(a)"
+            >
+              下载
+            </button>
+          </div>
+        </div>
         <span v-if="streaming" class="cursor-blink">▋</span>
         <!-- T14-U14：流式跳秒徽章 -->
         <span
