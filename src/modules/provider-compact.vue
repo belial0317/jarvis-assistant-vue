@@ -299,7 +299,7 @@ onMounted(() => {
                 </span>
               </div>
               <div class="truncate text-[11px] text-muted-foreground">
-                {{ p.baseUrl }}
+                {{ p.isBuiltin ? '平台内置' : p.baseUrl }}
               </div>
             </div>
             <button

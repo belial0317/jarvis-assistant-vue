@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { createIconifyIcon } from '../providers/icons';
 
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 import type {
   AgentRunStatus,
@@ -12,6 +12,9 @@ import type {
 } from '../types';
 
 import { renderMarkdown } from './markdown';
+import { downloadArtifact } from '../api/chat';
+import { fetchHeadMeta } from '../api/client';
+import { message as antMessage } from 'ant-design-vue';
 import { getToolRenderer } from './tool-renderers';
 import { h } from 'vue';
 import DiffBlock from './diff-block.vue';
@@ -64,6 +67,81 @@ const isAssistant = computed(() => props.message.role === 'assistant');
 const streaming = computed(() => props.message.status === 'streaming');
 const pending = computed(() => props.message.status === 'pending');
 const html = computed(() => renderMarkdown(props.message.content));
+
+/** md-body 引用：产物链接文本补全（渲染后异步读响应头文件名） */
+const mdBodyRef = ref<HTMLElement | null>(null);
+
+/** 把「下载产物」链接文本替换为真实文件名（HEAD 读 Content-Disposition，带后缀） */
+async function fillArtifactLinkNames(): Promise<void> {
+  await nextTick();
+  const body = mdBodyRef.value;
+  if (!body) return;
+  const links = Array.from(
+    body.querySelectorAll<HTMLAnchorElement>('a[href*="/ai-api/chat/artifacts/"]'),
+  );
+  for (const a of links) {
+    if (a.dataset.nameFilled) continue;
+    const id = a.getAttribute('href')?.match(/artifacts\/(\d+)\/download/)?.[1];
+    if (!id) continue;
+    try {
+      const headers = await fetchHeadMeta(`/chat/artifacts/${id}/download`);
+      const cd = headers['content-disposition'] ?? '';
+      const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+      if (m?.[1]) {
+        a.textContent = decodeURIComponent(m[1]);
+        a.dataset.nameFilled = '1';
+      }
+    } catch {
+      // 无权限/后端不可达：保持「下载产物」占位文本
+    }
+  }
+}
+
+// 消息内容更新（流式/历史加载）后补全链接文件名；immediate 覆盖首次渲染
+watch(html, () => void fillArtifactLinkNames(), { immediate: true });
+// onMounted：immediate watch 触发时组件未挂载（nextTick 提前 resolve），挂载后补一次
+onMounted(() => void fillArtifactLinkNames());
+
+/** T13：产物列表（消息级 + 工具解析产物） */
+const artifacts = computed(() => props.message.artifacts ?? []);
+
+/** 随消息上行的附件（历史消息渲染附件 chip） */
+const messageAttachments = computed(() => props.message.attachments ?? []);
+
+/** 附件下载（fetchBlob 鉴权） */
+async function onAttachmentDownload(att: { id: string; fileName?: string }) {
+  try {
+    await downloadArtifact(att.id, att.fileName);
+  } catch {
+    // 下载失败（无权限/过期）：静默，控制台可见
+  }
+}
+
+/** T13：附件解析状态文案 */
+const attachmentStatusText = computed(() => {
+  const s = props.message.attachmentStatus;
+  if (!s) return '';
+  if (s.status === 'parsing') return '解析中…';
+  if (s.status === 'indexed') return `已入库知识库${s.docId ? `（文档 ${s.docId}）` : ''}`;
+  if (s.status === 'ready') return `完成${s.ocrUsed ? `（OCR ${s.pages ?? 0} 页）` : ''}`;
+  if (s.status === 'failed') return `失败${s.error ? `：${s.error}` : ''}`;
+  return s.status;
+});
+
+/** T13：鉴权下载产物 */
+async function onDownload(a: { artifactId: string; fileName?: string }) {
+  try {
+    await downloadArtifact(a.artifactId, a.fileName);
+  } catch (e: any) {
+    antMessage.error(`下载失败: ${e?.message ?? '未知错误'}`);
+  }
+}
+
+function formatSize(size: number): string {
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  if (size >= 1024) return `${(size / 1024).toFixed(0)} KB`;
+  return `${size} B`;
+}
 
 // ===== T14-U13：思考折叠块（流式展开 + 0.1s 精度计时；完成后自动折叠） =====
 const reasoningOpen = ref(true);
@@ -164,6 +242,23 @@ function toggle(id: string) {
 /** T6-U1：代码块复制（事件委托——markdown 为 v-html 字符串，无法逐按钮绑定） */
 async function onMdBodyClick(e: MouseEvent) {
   const target = e.target as HTMLElement | null;
+  // 产物下载链接：拦截默认导航（a 标签 GET 不带鉴权头），走 fetchBlob 鉴权下载
+  const link = target?.closest?.('a[href*="/ai-api/chat/artifacts/"]') as HTMLAnchorElement | null;
+  if (link) {
+    e.preventDefault();
+    const m = link.getAttribute('href')?.match(/artifacts\/(\d+)\/download/);
+    if (m?.[1]) {
+      try {
+        // 链接文本已补全为真实文件名（含后缀），优先作为下载名；
+        // CORS preflight 缓存可能导致响应头 Content-Disposition 不可读
+        const fileName = link.innerText.trim() || undefined;
+        await downloadArtifact(m[1], fileName);
+      } catch {
+        // 下载失败（无权限/过期）：不打断阅读，浏览器控制台可见
+      }
+    }
+    return;
+  }
   const btn = target?.closest?.('.md-code-copy') as HTMLElement | null;
   if (!btn) return;
   const wrap = btn.closest('.md-code-wrap');
@@ -394,7 +489,50 @@ async function copyContent() {
             : 'rounded-bl-sm border border-border bg-card text-foreground'
         "
       >
-        <div class="md-body" @click="onMdBodyClick" v-html="html" />
+        <div ref="mdBodyRef" class="md-body" @click="onMdBodyClick" v-html="html" />
+        <!-- T13：附件解析状态 -->
+        <div
+          v-if="message.attachmentStatus"
+          class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+          附件解析：{{ attachmentStatusText }}
+        </div>
+        <!-- T13：AI 产物卡片（鉴权下载） -->
+        <div v-if="artifacts.length" class="mt-2 space-y-1.5">
+          <div
+            v-for="a in artifacts"
+            :key="a.artifactId"
+            class="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5"
+          >
+            <span class="min-w-0 flex-1 truncate text-[12px]">{{ a.fileName }}</span>
+            <span v-if="a.size" class="flex-shrink-0 text-[10px] text-muted-foreground">
+              {{ formatSize(a.size) }}
+            </span>
+            <button
+              class="flex-shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] hover:border-primary/40 hover:text-primary"
+              @click.stop="onDownload(a)"
+            >
+              下载
+            </button>
+          </div>
+        </div>
+        <!-- 随消息上行的附件（历史消息渲染附件 chip） -->
+        <div v-if="messageAttachments.length" class="mt-2 flex flex-wrap gap-1.5">
+          <span
+            v-for="att in messageAttachments"
+            :key="att.id"
+            class="inline-flex max-w-[260px] items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px]"
+          >
+            <span class="min-w-0 truncate">{{ att.fileName }}</span>
+            <button
+              class="flex-shrink-0 text-[10px] text-primary hover:underline"
+              @click.stop="onAttachmentDownload(att)"
+            >
+              下载
+            </button>
+          </span>
+        </div>
         <span v-if="streaming" class="cursor-blink">▋</span>
         <!-- T14-U14：流式跳秒徽章 -->
         <span

@@ -20,6 +20,8 @@ const props = defineProps<{
   /** 当前选中的模型 ID（与 modelOptions 的 value 对齐），空串表示未选中 */
   modelId?: string;
   modelOptions?: Array<{ label: string; value: string }>;
+  /** T13：当前会话 ID（附件上传登记归属） */
+  sessionId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -216,6 +218,8 @@ function formatSize(bytes: number): string {
 // T24：附件真实上传（占位卡 → 上传完成替换为真实引用；失败移除并报错）
 async function handleFiles(files: FileList | null) {
   if (!files || files.length === 0) return;
+  // 本地跟踪最新 items：上传成功/失败后基于它 emit，避免 props.context 异步更新时序导致 ref 丢失
+  const items: ContextItem[] = [...(props.context ?? [])];
   for (const file of Array.from(files)) {
     const isImage = isImageFile(file.name);
     const id = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -225,23 +229,24 @@ async function handleFiles(files: FileList | null) {
       ref: '',
       type: isImage ? 'image' : 'file',
     };
-    emit('update:context', [...(props.context ?? []), placeholder]);
+    items.push(placeholder);
+    emit('update:context', [...items]);
     try {
-      const res = await uploadFile(file);
-      emit(
-        'update:context',
-        (props.context ?? []).map((c) =>
-          c.id === id
-            ? { ...c, label: `${res.name} (${formatSize(res.size)})`, ref: res.url }
-            : c,
-        ),
-      );
+      const res = await uploadFile(file, props.sessionId ?? '');
+      const idx = items.findIndex((c) => c.id === id);
+      if (idx >= 0) {
+        items[idx] = {
+          ...items[idx],
+          label: `${res.name} (${formatSize(res.size)})`,
+          ref: res.downloadUrl ?? `/ai-api/chat/attachments/${res.attachmentId}/download`,
+        };
+      }
+      emit('update:context', [...items]);
     } catch {
       message.error(`上传失败: ${file.name}`);
-      emit(
-        'update:context',
-        (props.context ?? []).filter((c) => c.id !== id),
-      );
+      const idx = items.findIndex((c) => c.id === id);
+      if (idx >= 0) items.splice(idx, 1);
+      emit('update:context', [...items]);
     }
   }
   uploadMenuOpen.value = false;

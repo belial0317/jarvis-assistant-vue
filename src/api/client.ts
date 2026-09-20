@@ -441,6 +441,43 @@ async function doStream(
 
 // ===== 公开 API：aiRequestClient =====
 
+/** T13：鉴权下载二进制（附件/产物），返回 Blob；非 OK 显式抛错 */
+export async function fetchBlob(url: string): Promise<Blob> {
+  const baseURL = resolveBaseURL();
+  const response = await fetch(buildUrl(baseURL, url), { headers: buildHeaders() });
+  if (!response.ok) {
+    throw new Error(`下载失败: HTTP ${response.status}`);
+  }
+  return response.blob();
+}
+
+/** 鉴权下载 + 响应头文件名（Content-Disposition filename*，带后缀） */
+export async function fetchBlobWithMeta(url: string): Promise<{ blob: Blob; fileName?: string }> {
+  const baseURL = resolveBaseURL();
+  const response = await fetch(buildUrl(baseURL, url), { headers: buildHeaders() });
+  if (!response.ok) {
+    throw new Error(`下载失败: HTTP ${response.status}`);
+  }
+  const cd = response.headers.get('content-disposition') ?? '';
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  return {
+    blob: await response.blob(),
+    fileName: m?.[1] ? decodeURIComponent(m[1]) : undefined,
+  };
+}
+
+/** 鉴权 HEAD：仅读响应头（如 Content-Disposition 文件名），不下载 body；非 OK 返回空 */
+export async function fetchHeadMeta(url: string): Promise<Record<string, string>> {
+  const baseURL = resolveBaseURL();
+  const response = await fetch(buildUrl(baseURL, url), { method: 'HEAD', headers: buildHeaders() });
+  if (!response.ok) return {};
+  const out: Record<string, string> = {};
+  response.headers.forEach((v, k) => {
+    out[k] = v;
+  });
+  return out;
+}
+
 /** ETag 版本化 GET 的结果（PP3 manifest 拉取专用） */
 export interface EtagResult<T> {
   /** true = 服务端 304，内容未变，沿用本地缓存 */

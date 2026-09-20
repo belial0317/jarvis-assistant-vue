@@ -55,9 +55,13 @@ md.renderer.rules.fence = (tokens, idx) => {
   );
 };
 
-/** 行内代码：保留旧版 md-inline-code 类名 */
+/** 行内代码：保留旧版 md-inline-code 类名；内容为产物下载 URL 时渲染为可点击链接（LLM 常把 URL 包在反引号内） */
 md.renderer.rules.code_inline = (tokens, idx) => {
-  return `<code class="md-inline-code">${md.utils.escapeHtml(tokens[idx]!.content)}</code>`;
+  const content = tokens[idx]!.content;
+  if (ARTIFACT_URL_TEST.test(content)) {
+    return `<a href="${md.utils.escapeHtml(content)}" target="_blank" rel="noopener noreferrer">下载产物</a>`;
+  }
+  return `<code class="md-inline-code">${md.utils.escapeHtml(content)}</code>`;
 };
 
 /** markdown-it 渲染规则签名（@types/markdown-it 未给 rules 键提供上下文类型，显式声明） */
@@ -103,8 +107,19 @@ const PURIFY_CONFIG = {
   ],
 };
 
+/** 产物下载 URL（相对路径）：markdown-it linkify 只识别 http(s)://，需预处理为链接语法。
+ *  排除反引号包裹的（code_inline renderer 负责转链接，避免双重替换）。 */
+const ARTIFACT_URL_RE = /(?<!\]\()(?<!`)(\/ai-api\/chat\/artifacts\/\d+\/download)(?!`)/g;
+/** 非全局版（code_inline renderer 用，避免 lastIndex 状态） */
+const ARTIFACT_URL_TEST = /^\/ai-api\/chat\/artifacts\/\d+\/download$/;
+
+/** 把纯文本中的产物下载地址替换为可点击链接（已是 markdown 链接/反引号内的不动） */
+function linkifyArtifactUrls(src: string): string {
+  return src.replace(ARTIFACT_URL_RE, '[下载产物]($1)');
+}
+
 export function renderMarkdown(src: string): string {
   if (!src) return '';
-  const raw = md.render(src);
+  const raw = md.render(linkifyArtifactUrls(src));
   return DOMPurify.sanitize(raw, PURIFY_CONFIG);
 }
