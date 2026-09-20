@@ -55,11 +55,16 @@ jobs:
       - name: Build & Test
         run: pnpm build && pnpm test
 
+      # npm 发布（暂缓）：私有 npm 仓库地址未配置时跳过 publish，其余步骤照常。
+      # 配置 repo Secrets NPM_REGISTRY_URL + NPM_TOKEN（该仓库认证 token）后自动恢复发布。
       - name: Publish
-        run: pnpm publish --no-git-checks --registry "${NPM_REGISTRY_URL:-https://registry.npmjs.org}"
+        run: |
+          if [ -z "$NPM_REGISTRY_URL" ]; then
+            echo "NPM_REGISTRY_URL 未配置，跳过 npm publish（仅构建 + GitHub Release）"
+            exit 0
+          fi
+          pnpm publish --no-git-checks --registry "$NPM_REGISTRY_URL"
         env:
-          # 私有 npm 仓库（如自部署 Nexus）：repo Secrets 配置 NPM_REGISTRY_URL（仓库地址）
-          # 与 NPM_TOKEN（该仓库认证 token）。未配置 NPM_REGISTRY_URL 时默认公共源。
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_REGISTRY_URL: ${{ secrets.NPM_REGISTRY_URL }}
 
