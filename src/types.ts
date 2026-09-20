@@ -121,6 +121,8 @@ export interface ChatMessage {
   content: string;
   /** T13：该条消息关联的 AI 产物列表 */
   artifacts?: ArtifactInfo[];
+  /** 随消息上行的附件（id/fileName/mimeType/downloadUrl；历史消息渲染附件 chip） */
+  attachments?: Array<{ id: string; fileName: string; mimeType?: string; downloadUrl?: string }>;
   /** T13：附件解析状态 */
   attachmentStatus?: AttachmentStatus;
   /** 推理过程（thinking），默认折叠 */

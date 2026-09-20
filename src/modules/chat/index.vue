@@ -858,6 +858,16 @@ async function onSend(text: string) {
     const hostContext = perceptionOn.value
       ? hostContextStore?.context.value ?? null
       : null;
+    // 附件提取（发送前）：context 中已上传的附件（ref 含 /attachments/{id}/download），
+    // 图片走多模态；注意保持字符串——雪花 ID 超 JS Number 精度（2^53），转 Number 会丢位
+    const attachmentIds = (context.value ?? [])
+      .map((c) => c.ref?.match(/attachments\/(\d+)\/download/)?.[1])
+      .filter((v): v is string => !!v);
+    // 发送请求发出即清空输入区附件 chip（不等 LLM 流结束）
+    context.value = [];
+    if (activeSession.value) {
+      activeSession.value.context = [];
+    }
     await streamMessage(
       session.id,
       {
@@ -867,6 +877,7 @@ async function onSend(text: string) {
         content: text,
         currentRoute,
         pageContext,
+        ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
         // S4/T3：用户选中文本（显式引用「指哪问哪」；无选中不携带）
         ...(selection ? { selectedText: selection } : {}),
         // T6：宿主业务上下文（权威感知源，后端注入【宿主业务上下文】块）
@@ -1049,6 +1060,13 @@ async function onSend(text: string) {
           }
           case 'done': {
             reactiveAssistant.status = 'complete';
+            // 终态兜底：后端 AgentRuntime 已发 phase=completed；旧后端/异常时同步徽章，避免"规划中"旋转残留
+            if (reactiveAssistant.agentStatus) {
+              reactiveAssistant.agentStatus = {
+                ...reactiveAssistant.agentStatus,
+                phase: 'completed',
+              };
+            }
             reactiveAssistant.tokens = {
               input: userMsg.tokens?.input ?? 0,
               output: reactiveAssistant.content.length,
@@ -1087,10 +1105,18 @@ async function onSend(text: string) {
 
 /** T20：授权并始终允许——审批通过 + 权限规则写 never（后续不再询问） */
 async function onToolAlwaysAllow(payload: {
+  messageId: string;
   approvalId: string;
   serverName?: string;
   toolName: string;
 }) {
+  // T20：与 onToolApproval 同口径更新本地审批状态——否则卡片永远停在 pending
+  const session = activeSession.value;
+  const msg = session?.messages.find((m) => m.id === payload.messageId);
+  const approval = msg?.toolApprovals?.find(
+    (a) => a.approvalId === payload.approvalId,
+  );
+  if (approval) approval.status = 'approved';
   await respondToolApproval(activeId.value!, payload.approvalId, true).catch(() => {});
   if (payload.serverName) {
     await updateToolApprovalPolicy(payload.serverName, payload.toolName, 'never').catch(() => {});
