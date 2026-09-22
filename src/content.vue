@@ -7,6 +7,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import type { AIModuleType } from './types';
 
 import ModuleNav from './components/module-nav.vue';
+import TenantSwitcher from './components/tenant-switcher.vue';
 import AgentCompact from './modules/agent-compact.vue';
 import ChatWorkbench from './modules/chat/index.vue';
 import KnowledgeCompact from './modules/knowledge-compact.vue';
@@ -149,6 +150,9 @@ watch(
       <span class="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
       <span>{{ health.state === 'idle' ? '等待检测后端…' : '正在检测后端…' }}</span>
     </div>
+
+    <!-- 多租户切换条：仅 pro 注入 TenantExtension 时显示（单租户基座不渲染） -->
+    <TenantSwitcher />
 
     <div class="flex min-h-0 flex-1">
       <ModuleNav v-model:active="active" />

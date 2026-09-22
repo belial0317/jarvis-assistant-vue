@@ -9,6 +9,7 @@ import type { AuthProvider } from './auth-provider';
 import type { HttpAdapter } from './http-adapter';
 import type { LocaleProvider } from './locale-provider';
 import type { RouteContextProvider } from './route-provider';
+import type { TenantExtension } from './tenant-provider';
 
 /**
  * T6 宿主业务上下文（权威感知源）。
@@ -47,6 +48,12 @@ export interface AiAssistantConfig {
    * 宿主需注入此函数，AI 助手无独立登录体系。
    */
   auth?: AuthProvider;
+
+  /**
+   * 多租户扩展（由闭源包 @jarvis/frontend-pro 注入）。
+   * 缺省/未提供 = 单租户多用户基座；enabled=true 时组件渲染租户切换入口。
+   */
+  tenant?: TenantExtension;
 
   /**
    * HTTP 适配器：若宿主已有 RequestClient/fetch 封装，可注入复用。

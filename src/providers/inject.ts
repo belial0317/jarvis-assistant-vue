@@ -9,7 +9,7 @@
 
 import type { App, InjectionKey, Plugin } from 'vue';
 
-import { inject } from 'vue';
+import { getCurrentInstance, inject } from 'vue';
 
 import type { AiAssistantConfig } from './config';
 
@@ -51,13 +51,16 @@ export function createAiAssistant(config: AiAssistantConfig): Plugin {
  * @throws 若未通过 createAiAssistant 注入或 prop 传入
  */
 export function useAiAssistantConfig(): AiAssistantConfig {
-  // 必须在 setup 顶层或 functional 组件中调用，否则 inject 会抛错
-  // 此时降级到全局引用
-  try {
-    const config = inject(AI_ASSISTANT_CONFIG_KEY);
-    if (config) return config;
-  } catch {
-    /* inject() outside setup - fall through to globalConfig */
+  // 仅在 setup/functional 上下文调用 inject；非组件上下文（watch 回调、
+  // 事件处理器、异步回调）直接走全局引用，避免 Vue 打
+  // "inject() can only be used inside setup()" warn
+  if (getCurrentInstance()) {
+    try {
+      const config = inject(AI_ASSISTANT_CONFIG_KEY);
+      if (config) return config;
+    } catch {
+      /* inject() outside setup - fall through to globalConfig */
+    }
   }
   if (globalConfig) return globalConfig;
   throw new Error(
