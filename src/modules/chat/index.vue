@@ -627,8 +627,21 @@ async function loadSessions() {
     const list = await listSessions({ pageSize: 50 });
     sessions.value = list.map((vo) => reactive(voToSession(vo)));
     if (sessions.value.length > 0 && !activeId.value) {
-      activeId.value = sessions.value[0]!.id;
-      await loadMessages(activeId.value);
+      // 修复「刷新后原对话内容被清空」：列表头部可能是新建的空会话，
+      // 直接取第一条会恢复到空白视图。优先恢复最近一个有消息内容的会话；
+      // 全部为空时保持新对话欢迎页（不再自动拉起空会话覆盖视图）。
+      const withContent = sessions.value.find((s) => (s.messageCount ?? 0) > 0);
+      (window as any).__restoreLog = {
+        n: sessions.value.length,
+        picked: withContent?.id ?? null,
+        mc: withContent?.messageCount ?? null,
+        activeIdBefore: activeId.value,
+      };
+      if (withContent) {
+        activeId.value = withContent.id;
+        await loadMessages(activeId.value);
+        (window as any).__restoreLog.afterLoad = withContent.messages.length;
+      }
     }
   } catch {
     // 加载失败：不阻塞 UI，保留空列表
