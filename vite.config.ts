@@ -41,6 +41,7 @@ function stylesEmitPlugin() {
 export default defineConfig({
   define: {
     __SDK_VERSION__: JSON.stringify(pkg.version),
+    __SDK_CHANNEL__: JSON.stringify(process.env.SDK_CHANNEL || 'oss'),
     __SDK_PACKAGE__: JSON.stringify(pkg.name),
     __SDK_CHANNEL__: JSON.stringify(process.env.SDK_CHANNEL ?? 'oss'),
   },

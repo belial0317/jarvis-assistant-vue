@@ -26,6 +26,11 @@ export {
 export type { AiAssistantConfig, HostBusinessContext } from './providers/config';
 export type { AuthProvider } from './providers/auth-provider';
 export type {
+  TenantExtension,
+  TenantInfo,
+  AuthRefreshResult,
+} from './providers/tenant-provider';
+export type {
   HttpAdapter,
   HttpRequestConfig,
   HttpResponse,
