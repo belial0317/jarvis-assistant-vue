@@ -4,3 +4,5 @@ dist
 .DS_Store
 **/.mimosa
 .mimosa
+# VitePress build cache
+/docs/.vitepress/cache/
