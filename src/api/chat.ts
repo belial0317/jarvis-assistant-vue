@@ -143,6 +143,7 @@ export function toChatMessage(vo: ChatMessageVO): ChatMessage {
     error: vo.error,
     createdAt: vo.createdAt,
     attachments: vo.attachments,
+    traceId: (vo as { traceId?: string }).traceId,
   };
 }
 

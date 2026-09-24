@@ -67,7 +67,7 @@ const flowNodes = computed(() =>
   layout.value.nodes.map((n) => ({
     id: n.id,
     position: { x: n.x, y: n.y },
-    data: { label: `${n.label}\n${statusText(n.executionStatus, n.resultKind)}` },
+    data: { label: `${n.label}\n${statusText(n.executionStatus, n.resultKind ?? null)}` },
     class: `span-node status-${n.executionStatus}`,
     draggable: false,
     connectable: false,
@@ -130,7 +130,7 @@ function onEdgeClick(e: { edge: { id: string } }) {
         <template v-if="selectedSpan">
           <h4>{{ selectedSpan.label }}</h4>
           <p>spanId: {{ selectedSpan.spanId }}</p>
-          <p>状态: {{ statusText(selectedSpan.executionStatus, selectedSpan.resultKind) }}</p>
+          <p>状态: {{ statusText(selectedSpan.executionStatus, selectedSpan.resultKind ?? null) }}</p>
           <p>耗时: {{ selectedSpan.durationMs != null ? `${selectedSpan.durationMs}ms` : '未返回' }}</p>
           <p>callKey: {{ selectedSpan.callKey ?? '-' }}</p>
           <p v-if="selectedSpan.childTraceId">childTraceId: {{ selectedSpan.childTraceId }}</p>

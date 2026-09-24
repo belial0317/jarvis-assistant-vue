@@ -34,6 +34,7 @@ import { updateToolApprovalPolicy } from '../../api/mcp';
 import { listProviders } from '../../api/provider';
 
 import MessageItem from '../../components/message-item.vue';
+import AgentTraceModal from '../../components/agent-trace/AgentTraceModal.vue';
 import {
   buildPageInsight,
   capturePageContext,
@@ -1077,6 +1078,9 @@ async function onSend(text: string) {
           }
           case 'done': {
             reactiveAssistant.status = 'complete';
+            if (chunk.traceId) {
+              reactiveAssistant.traceId = chunk.traceId;
+            }
             // 终态兜底：后端 AgentRuntime 已发 phase=completed；旧后端/异常时同步徽章，避免"规划中"旋转残留
             if (reactiveAssistant.agentStatus) {
               reactiveAssistant.agentStatus = {
@@ -1294,6 +1298,12 @@ async function onToolApproval(payload: {
     approval.status = 'pending';
     approval.riskDescription = err?.message ?? '审批提交失败，请重试';
   });
+}
+
+const traceModal = ref<{ open: boolean; messageId: string }>({ open: false, messageId: '' });
+
+function onOpenTrace(payload: { messageId: string }) {
+  traceModal.value = { open: true, messageId: payload.messageId };
 }
 
 async function onRetry() {
@@ -1809,9 +1819,16 @@ onUnmounted(() => {
             @tool-always-allow="onToolAlwaysAllow"
             @feedback="onFeedback"
             @continue-run="onContinueRun"
+            @open-trace="onOpenTrace"
           />
         </template>
       </div>
+
+      <AgentTraceModal
+        :open="traceModal.open"
+        :message-id="traceModal.messageId"
+        @close="traceModal.open = false"
+      />
 
       <!-- T10：任务面板（可收起横条） -->
       <div

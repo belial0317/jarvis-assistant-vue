@@ -140,6 +140,8 @@ export interface ChatMessage {
   diffs?: DiffPatch[];
   /** Agent 运行时状态（仅 Agent 模式下的助手消息有值） */
   agentStatus?: AgentRunStatus;
+  /** 执行轨迹ID（智能体路径入口；旧消息无 trace 为 undefined） */
+  traceId?: string;
   /** 方案B：默认模式意图路由结果（仅流式期存在） */
   agentRouted?: { agentId: string; agentName: string; method: 'RULE' | 'LLM' };
   /** NL2SQL 查询结果（仅 NL2SQL 技能触发的助手消息有值，前端渲染表格/图表，sql 字段已脱敏） */
@@ -271,6 +273,8 @@ export interface StreamChunk {
   replyId?: string;
   /** 服务端发出时间（Unix 毫秒） */
   ts?: number;
+  /** T3：执行轨迹ID（done 事件携带，智能体路径入口） */
+  traceId?: string;
   /** delta: 文本增量；reasoning: 思考增量 */
   text?: string;
   /** tool_call / tool_result: 工具调用信息 */

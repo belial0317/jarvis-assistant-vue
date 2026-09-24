@@ -6,15 +6,15 @@
 
 export interface TraceSpanLike {
   spanId: string;
-  parentSpanId: string | null;
+  parentSpanId?: string | null;
   sequenceNo: number;
   kind: string;
-  label: string;
-  fromParticipantId: string;
-  toParticipantId: string;
+  label?: string;
+  fromParticipantId?: string;
+  toParticipantId?: string;
   executionStatus: string;
-  resultKind: string | null;
-  durationMs: number | null;
+  resultKind?: string | null;
+  durationMs?: number | null;
   childTraceId?: string | null;
   callKey?: string | null;
 }
@@ -79,8 +79,8 @@ export function orderParticipants(spans: TraceSpanLike[], declared: TracePartici
   };
   for (const p of declared) push(p.id, p.type, p.label);
   for (const s of [...spans].sort((a, b) => a.sequenceNo - b.sequenceNo)) {
-    push(s.fromParticipantId, 'actor', s.fromParticipantId);
-    push(s.toParticipantId, 'actor', s.toParticipantId);
+    push(s.fromParticipantId ?? 'unknown', 'actor', s.fromParticipantId ?? 'unknown');
+    push(s.toParticipantId ?? 'unknown', 'actor', s.toParticipantId ?? 'unknown');
   }
   return seen;
 }
@@ -125,12 +125,12 @@ export function layoutTrace(
   const sorted = [...spans].sort((a, b) => a.sequenceNo - b.sequenceNo);
   const nodes: LayoutNode[] = sorted.map((s, i) => ({
     id: s.spanId,
-    x: (colOf.get(s.toParticipantId) ?? 0) * COL_WIDTH,
+    x: (colOf.get(s.toParticipantId ?? 'unknown') ?? 0) * COL_WIDTH,
     y: i * ROW_HEIGHT,
-    label: `${s.label}${s.durationMs != null ? ` (${s.durationMs}ms)` : ''}`,
+    label: `${s.label ?? s.kind}${s.durationMs != null ? ` (${s.durationMs}ms)` : ''}`,
     kind: s.kind,
     executionStatus: s.executionStatus,
-    resultKind: s.resultKind,
+    resultKind: s.resultKind ?? null,
     callKey: s.callKey ?? null,
     childTraceId: s.childTraceId ?? null,
   }));
@@ -142,7 +142,7 @@ export function layoutTrace(
         source: s.parentSpanId,
         target: s.spanId,
         direction: 'request',
-        label: s.label,
+        label: s.label ?? s.kind,
         executionStatus: s.executionStatus,
       });
     }

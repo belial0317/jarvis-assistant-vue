@@ -37,6 +37,8 @@ const emit = defineEmits<{
   toolApproval: [payload: { messageId: string; approvalId: string; approved: boolean }];
   /** T20：授权并始终允许（写 once/never 策略由后端语义决定） */
   toolAlwaysAllow: [payload: { messageId: string; approvalId: string; serverName?: string; toolName: string }];
+  /** T3：打开智能体路径诊断窗口 */
+  openTrace: [payload: { messageId: string }];
   /** T14：超过最大迭代后的「继续」请求 */
   continueRun: [];
 }>();
@@ -840,6 +842,14 @@ async function copyContent() {
           @click="pickFeedback('thumb_down')"
         >
           👎
+        </button>
+        <button
+          v-if="message.traceId"
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent hover:text-foreground"
+          title="查看智能体路径（执行诊断）"
+          @click="$emit('openTrace', { messageId: message.id })"
+        >
+          智能体路径
         </button>
         <button
           class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent hover:text-foreground"
