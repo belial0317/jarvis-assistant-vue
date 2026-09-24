@@ -135,7 +135,7 @@ describe('AgentTraceDemo 组件挂载冒烟（jsdom）', () => {
     }
     (globalThis as Record<string, unknown>).ResizeObserver = RO;
     // VueFlow fitView/getBox 依赖 SVG getBBox，jsdom 未实现
-    (globalThis.SVGElement.prototype as Record<string, unknown>).getBBox = () => ({ x: 0, y: 0, width: 100, height: 40 });
+    (globalThis.SVGElement.prototype as unknown as Record<string, unknown>).getBBox = () => ({ x: 0, y: 0, width: 100, height: 40 });
   });
 
   it('渲染全部 mock 节点与 request/return 边，详情面板显示引导文案', async () => {
