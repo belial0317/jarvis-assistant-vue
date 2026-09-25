@@ -201,7 +201,12 @@ function summaryText(): string {
 .trace-meta { display: flex; align-items: center; gap: 8px; }
 .trace-summary { color: #666; font-size: 12px; }
 .trace-body { display: flex; height: 60vh; border-top: 1px solid #f0f0f0; }
-.flow-pane { flex: 1; position: relative; }
+.flow-pane { flex: 1; position: relative; z-index: 1; }
+/* R8：确保 VueFlow 画布与节点可交互（不被 modal wrap/detail pane 覆盖拦截） */
+.flow-pane :deep(.vue-flow) { pointer-events: auto; }
+.flow-pane :deep(.vue-flow__pane) { pointer-events: auto; }
+.flow-pane :deep(.vue-flow__node) { pointer-events: auto !important; cursor: pointer; }
+.flow-pane :deep(.vue-flow__edge) { pointer-events: stroke; }
 .load-more { position: absolute; bottom: 8px; left: 8px; z-index: 10; }
 .detail-pane { width: 340px; border-left: 1px solid #f0f0f0; padding: 12px; overflow: auto; background: #fafafa; }
 .detail-line { margin-bottom: 4px; font-size: 12px; }
