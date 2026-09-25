@@ -58,11 +58,23 @@ export interface TraceSpanDetail {
   kind?: string;
   executionStatus?: string;
   resultKind?: string | null;
+  durationMs?: number | null;
   inputJson?: string | null;
   outputJson?: string | null;
   errorJson?: string | null;
   configSnapshotJson?: string | null;
   eventsJson?: string | null;
+}
+
+/** U1：@JsonRawValue 字段在部分序列化路径下可能已是对象——统一归一化为 JSON 字符串 */
+function toJsonString(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === 'string') return v;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
 }
 
 function toNumber(v: unknown): number | undefined {
@@ -129,10 +141,11 @@ export async function getTraceSpanDetail(traceId: string, spanId: string): Promi
     kind: res?.kind == null ? undefined : String(res.kind),
     executionStatus: res?.executionStatus == null ? undefined : String(res.executionStatus),
     resultKind: res?.resultKind == null ? undefined : String(res.resultKind),
-    inputJson: res?.inputJson == null ? null : String(res.inputJson),
-    outputJson: res?.outputJson == null ? null : String(res.outputJson),
-    errorJson: res?.errorJson == null ? null : String(res.errorJson),
-    configSnapshotJson: res?.configSnapshotJson == null ? null : String(res.configSnapshotJson),
-    eventsJson: res?.eventsJson == null ? null : String(res.eventsJson),
+    durationMs: res?.durationMs == null ? undefined : Number(res.durationMs),
+    inputJson: toJsonString(res?.inputJson),
+    outputJson: toJsonString(res?.outputJson),
+    errorJson: toJsonString(res?.errorJson),
+    configSnapshotJson: toJsonString(res?.configSnapshotJson),
+    eventsJson: toJsonString(res?.eventsJson),
   };
 }
