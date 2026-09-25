@@ -1081,6 +1081,10 @@ async function onSend(text: string) {
             if (chunk.traceId) {
               reactiveAssistant.traceId = chunk.traceId;
             }
+            // N1：done 携带服务端真实 messageId——回填临时 local-a-*，入口点击立即可用
+            if (chunk.messageId) {
+              reactiveAssistant.id = chunk.messageId;
+            }
             // 终态兜底：后端 AgentRuntime 已发 phase=completed；旧后端/异常时同步徽章，避免"规划中"旋转残留
             if (reactiveAssistant.agentStatus) {
               reactiveAssistant.agentStatus = {

@@ -275,6 +275,8 @@ export interface StreamChunk {
   ts?: number;
   /** T3：执行轨迹ID（done 事件携带，智能体路径入口） */
   traceId?: string;
+  /** N1：服务端真实 assistant messageId（done 事件携带，回填临时 local-a-*） */
+  messageId?: string;
   /** delta: 文本增量；reasoning: 思考增量 */
   text?: string;
   /** tool_call / tool_result: 工具调用信息 */
