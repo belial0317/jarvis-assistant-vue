@@ -1,5 +1,6 @@
 import { message } from 'ant-design-vue';
 
+import { getUserJwt } from './auth';
 import { useAiAssistantConfig } from '../providers';
 
 // ===== 后端服务地址动态配置（localStorage 持久化）=====
@@ -126,11 +127,14 @@ function buildHeaders(custom?: Record<string, string>): Record<string, string> {
   const aiConfig = useAiAssistantConfig();
   const headers: Record<string, string> = { ...custom };
   // 鉴权链：宿主注入 config.auth 优先；其次宿主 syncParams 下发的内存 Key；
-  // 最后设置模块本地 Key。
+  // 再次组件内置登录的用户 JWT（tasks-2610-0212-46）；最后设置模块本地 Key。
   // 必须多通道：异步回调（点击 / await 之后）里 inject 拿到的是宿主全局兜底配置，
   // 该配置往往没有 auth——此时宿主下发 Key / 设置页本地 Key 是唯一凭证。
   const token =
-    aiConfig.auth?.getToken?.() ?? getHostAiApiKey() ?? getAiApiKey();
+    aiConfig.auth?.getToken?.() ??
+    getHostAiApiKey() ??
+    getUserJwt() ??
+    getAiApiKey();
   const authHeader = formatToken(token);
   if (authHeader) {
     headers.Authorization = authHeader;

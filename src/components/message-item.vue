@@ -239,6 +239,27 @@ function toggle(id: string) {
   expandedMap[id] = !expandedMap[id];
 }
 
+// 注册了自定义渲染器的工具调用自动展开（如 xhs_collect_hot_posts → 扫码卡片），
+// 避免用户必须点开折叠行才能看到结果卡片（T21 渲染器契约）。
+// 工具调用 ≥3 时整组默认折叠（toolGroupOpen），存在注册渲染器时一并展开分组。
+function autoExpandRenderedToolCalls() {
+  let opened = false;
+  for (const tc of props.message.toolCalls ?? []) {
+    if (getToolRenderer(tc.name) && !expandedMap[tc.id]) {
+      expandedMap[tc.id] = true;
+      opened = true;
+    }
+  }
+  if (opened) {
+    toolGroupOpen.value = true;
+  }
+}
+watch(
+  () => props.message.toolCalls,
+  () => nextTick(autoExpandRenderedToolCalls),
+  { immediate: true },
+);
+
 /** T6-U1：代码块复制（事件委托——markdown 为 v-html 字符串，无法逐按钮绑定） */
 async function onMdBodyClick(e: MouseEvent) {
   const target = e.target as HTMLElement | null;

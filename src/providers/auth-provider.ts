@@ -11,6 +11,14 @@ export interface AuthProvider {
   getToken(): string | null | undefined;
 
   /**
+   * 可选：返回当前登录用户的 JWT（用户级端点专用通道）。
+   * 与 getToken（业务凭据，可为 API Key）分离：用户级设置同步
+   * （/auth/profile/settings）按可信 X-User-Id 解析身份，必须携带用户 JWT。
+   * 未提供时用户级设置同步跳过（回落 localStorage 现状）。
+   */
+  getUserToken?(): string | null | undefined;
+
+  /**
    * 可选：返回 X-Tenant-Id 头的值。
    * 服务端对已认证请求以 JWT/API Key 内的租户为准并覆盖此头，
    * 因此多数宿主无需提供；仅为未认证的开放端点或展示目的保留。

@@ -18,6 +18,10 @@ import {
   useBackendHealth,
 } from './composables/use-backend-health';
 import { applySyncParams } from './composables/use-settings-sync';
+import { pullUserSettings } from './composables/use-user-settings';
+import LoginCompact from './modules/login-compact.vue';
+import { getUserJwt } from './api/auth';
+import { getAiApiKey, getHostAiApiKey } from './api/client';
 import {
   SDK_UPDATE_KEY,
   checkSdkUpdate,
@@ -103,6 +107,35 @@ const XIcon = createIconifyIcon('lucide:x');
 
 const open = ref(false);
 const health = useBackendHealth();
+
+// ===== 组件内置登录门控（tasks-2610-0212-46）=====
+// 无任何凭据（宿主 auth / 宿主下发 Key / 组件登录用户 / 本地 Key）时，抽屉内容切换为登录卡片。
+// 凭据可在运行时出现（宿主异步下发、设置页保存、登录成功），故按事件+抽屉打开时机探针重算。
+const authProbeTick = ref(0);
+const needsLogin = computed(() => {
+  void authProbeTick.value;
+  try {
+    if (resolvedConfig.auth?.getToken) return false;
+  } catch {
+    // config 未就绪：继续检查其余通道
+  }
+  if (getHostAiApiKey()) return false;
+  if (getUserJwt()) return false;
+  if (getAiApiKey()) return false;
+  return true;
+});
+function refreshAuthProbe(): void {
+  authProbeTick.value += 1;
+}
+watch(open, (isOpen) => {
+  if (isOpen) refreshAuthProbe();
+});
+if (typeof window !== 'undefined') {
+  window.addEventListener('ai-credentials-changed', refreshAuthProbe);
+}
+function onComponentLoggedIn(): void {
+  refreshAuthProbe();
+}
 
 // ===== SDK 升级提醒（tasks-2609-1715-49 T4）=====
 // 检查时机（用户决策）：首次加载组件 + 每次打开面板各一次；in-flight 去重（T3）。
@@ -208,6 +241,10 @@ watch(open, (isOpen) => {
 onMounted(() => {
   // 首次加载组件：检查一次 SDK 升级
   void runSdkUpdateCheck();
+  // 用户级设置回填（tasks-2610-0215-56 T3）：有登录身份时拉取服务端设置；
+  // 此时 syncParams（watch immediate）已应用，宿主下发项不会被用户设置覆盖。
+  // 无身份/失败静默回落 localStorage 现状。
+  void pullUserSettings();
   pagePerception.start(resolvedConfig.route, resolvedConfig.mainContentSelector);
   // T16：窄屏视口监听（<768px 全屏宽度）
   const onResize = () => {
@@ -351,7 +388,9 @@ defineExpose({
         </button>
       </div>
       <div class="min-h-0 flex-1">
-        <AiAssistantContent />
+        <!-- 内置登录门控（tasks-2610-0212-46）：无任何凭据时先登录，凭据建立后进入对话 -->
+        <LoginCompact v-if="needsLogin" @logged-in="onComponentLoggedIn" />
+        <AiAssistantContent v-else />
       </div>
     </div>
   </a-drawer>

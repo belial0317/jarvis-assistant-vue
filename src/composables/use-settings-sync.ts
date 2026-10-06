@@ -14,6 +14,14 @@ export interface SyncResult {
   apiKeyApplied: boolean;
 }
 
+/** 宿主 syncParams 已下发的服务地址（用于用户级设置回填时的优先级判定：宿主下发优先） */
+let syncedBaseUrl: string | null = null;
+
+/** 最近一次 syncParams 下发的服务地址；未下发过返回 null */
+export function getSyncedBaseUrl(): string | null {
+  return syncedBaseUrl;
+}
+
 export function applySyncParams(
   syncParams: NonNullable<AiAssistantConfig['syncParams']>,
 ): SyncResult {
@@ -22,6 +30,7 @@ export function applySyncParams(
   const baseURL = syncParams.baseURL?.trim();
   if (baseURL) {
     setAiBaseUrl(baseURL);
+    syncedBaseUrl = baseURL;
     result.baseURLApplied = true;
   }
 

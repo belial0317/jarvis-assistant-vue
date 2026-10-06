@@ -991,10 +991,12 @@ async function onSend(text: string) {
                 tc.result = chunk.toolCall.result;
                 tc.status = chunk.toolCall.status;
                 tc.duration = chunk.toolCall.duration;
-                // T13：文档工具结果 JSON 含 artifactId → 解析为产物卡片
+                // T13：文档工具结果 JSON 含 artifactId → 解析为产物卡片。
+                // 仅识别「助手产物形状」（downloadUrl/mimeType）：外部 MCP 工具（如 ecomSaveAnalysisReport）
+                // 返回的 {artifactId, name, url} 是宿主侧产物，字段与下载通道均不同，不得混入产物卡片
                 try {
                   const parsed = JSON.parse(tc.result ?? '{}');
-                  if (parsed?.artifactId) {
+                  if (parsed?.artifactId && (parsed.downloadUrl || parsed.mimeType)) {
                     tc.artifact = parsed;
                     if (!reactiveAssistant.artifacts) {
                       reactiveAssistant.artifacts = [];

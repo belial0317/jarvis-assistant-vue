@@ -116,18 +116,19 @@ export interface ChatSessionQueryDTO {
 
 /**
  * 将后端 ChatMessageVO 转为前端 ChatMessage。
- * 后端 toolCalls / tokens 是 JSON 字符串，这里反序列化为前端结构。
+ * 后端 toolCalls / tokens 标注 @JsonRawValue：JSON 响应中已是数组/对象（而非字符串），
+ * 但历史契约/旧后端可能仍返回字符串，这里兼容两种形态。
  */
 export function toChatMessage(vo: ChatMessageVO): ChatMessage {
   let toolCalls: ChatMessage['toolCalls'];
   try {
-    toolCalls = vo.toolCalls ? JSON.parse(vo.toolCalls) : undefined;
+    toolCalls = typeof vo.toolCalls === 'string' ? JSON.parse(vo.toolCalls) : vo.toolCalls;
   } catch {
     toolCalls = undefined;
   }
   let tokens: ChatMessage['tokens'];
   try {
-    tokens = vo.tokens ? JSON.parse(vo.tokens) : undefined;
+    tokens = typeof vo.tokens === 'string' ? JSON.parse(vo.tokens) : vo.tokens;
   } catch {
     tokens = undefined;
   }

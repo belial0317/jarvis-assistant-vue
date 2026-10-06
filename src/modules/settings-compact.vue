@@ -26,9 +26,22 @@ import {
   checkBackendHealth,
   useBackendHealth,
 } from '../composables/use-backend-health';
+import { pushUserSetting } from '../composables/use-user-settings';
 import { listProviders } from '../api/provider';
 import { useAiAssistantConfig } from '../providers/inject';
 import type { AiAssistantConfig } from '../providers/config';
+
+/**
+ * 设置保存后的服务端持久化（tasks-2610-0215-56 T3 双写）：
+ * 本地已即时生效；有登录身份时同步服务端（失败显式警告，不谎报成功）。
+ */
+function syncToServer(key: string, value: string): void {
+  void pushUserSetting(key, value).then((result) => {
+    if (result === 'failed') {
+      message.warning('配置已本地生效；云同步失败，换浏览器后将无法自动恢复');
+    }
+  });
+}
 
 /**
  * 宿主/门户配置（组件树内由 AiAssistant provide；兜底空对象防越级使用报错）
@@ -131,6 +144,7 @@ async function saveNl2sqlUrl() {
   const { setNl2sqlBaseUrl } = await import('../api/nl2sql');
   const url = nl2sqlUrlInput.value.trim();
   setNl2sqlBaseUrl(url);
+  syncToServer('ai_assistant_nl2sql_url', url);
   message.success(
     url
       ? `NL2SQL 接口绑定地址已设置为：${url}`
@@ -183,8 +197,9 @@ const hostKeyApplied = ref(false);
 function loadApiKey() {
   savedApiKeyMasked.value = maskApiKeyForDisplay();
   apiKeyInput.value = '';
+  // 宿主已下发凭据 = 内存 Key 存在，或宿主 getToken 本次实际取到值（函数恒存在，按取值判定）
   hostKeyApplied.value = Boolean(
-    getHostAiApiKey() || typeof hostConfig.auth?.getToken === 'function',
+    getHostAiApiKey() || hostConfig.auth?.getToken?.(),
   );
 }
 
@@ -207,6 +222,7 @@ async function saveApiKey() {
   }
   setAiApiKey(key);
   loadApiKey();
+  syncToServer('ai_assistant_api_key', key);
   // 在线验证 key 是否有效（通过后端代理调 NL2SQL 或 sessions 接口测试）
   try {
     const { aiRequestClient } = await import('../api/client');
@@ -220,6 +236,7 @@ async function saveApiKey() {
 function handleClearApiKey() {
   resetAiApiKey();
   loadApiKey();
+  syncToServer('ai_assistant_api_key', '');
   message.success('已清除本地 API Key（回落到宿主默认凭据）');
 }
 
@@ -234,6 +251,7 @@ async function saveBackendUrl() {
   const url = backendUrlInput.value.trim();
   setAiBaseUrl(url);
   backendUrlInput.value = getAiBaseUrl();
+  syncToServer('ai_assistant_base_url', url && url !== DEFAULT_BASE_URL ? url : '');
   message.success(
     url && url !== DEFAULT_BASE_URL
       ? `后端服务地址已切换为：${url}`
@@ -248,6 +266,7 @@ async function saveBackendUrl() {
 async function handleResetBackendUrl() {
   resetAiBaseUrl();
   backendUrlInput.value = DEFAULT_BASE_URL;
+  syncToServer('ai_assistant_base_url', '');
   message.success('已恢复默认后端服务地址（/ai-api）');
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ai-base-url-changed'));
