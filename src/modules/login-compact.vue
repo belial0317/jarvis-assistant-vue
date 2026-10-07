@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 /**
- * 组件内置登录卡片（tasks-2610-0212-46）
+ * 组件内置登录卡片（tasks-2610-0212-46；UI 重设计 2026-10-07）
  *
  * 显示条件：抽屉内无任何可用凭据（宿主 auth / 宿主下发 Key / 组件登录用户 / 本地 Key）。
  * 三种方式对齐控制台：账号密码 / 短信验证码 / API Key（微信扫码属门户场景，卡片内引导）。
@@ -9,6 +9,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { message } from 'ant-design-vue';
 
+import { createIconifyIcon } from '../providers/icons';
 import {
   loginByUsername,
   loginBySmsCode,
@@ -17,6 +18,17 @@ import {
   type LoginResult,
 } from '../api/auth';
 import { getAiBaseUrl, maskAiApiKey, setAiApiKey, setAiBaseUrl } from '../api/client';
+
+const SparklesIcon = createIconifyIcon('lucide:sparkles');
+const UserIcon = createIconifyIcon('lucide:user');
+const LockIcon = createIconifyIcon('lucide:lock');
+const SmartphoneIcon = createIconifyIcon('lucide:smartphone');
+const ShieldCheckIcon = createIconifyIcon('lucide:shield-check');
+const KeyRoundIcon = createIconifyIcon('lucide:key-round');
+const ServerIcon = createIconifyIcon('lucide:server');
+const EyeIcon = createIconifyIcon('lucide:eye');
+const EyeOffIcon = createIconifyIcon('lucide:eye-off');
+const ChevronDownIcon = createIconifyIcon('lucide:chevron-down');
 
 const emit = defineEmits<{ (e: 'logged-in', result: LoginResult): void }>();
 
@@ -38,9 +50,16 @@ function applyBaseUrl(): string {
   return getAiBaseUrl();
 }
 
+const tabs = [
+  { key: 'account', label: '账号登录' },
+  { key: 'sms', label: '验证码登录' },
+  { key: 'apikey', label: 'API Key' },
+] as const;
+
 // ===== 账号登录 =====
 const username = ref('');
 const password = ref('');
+const showPassword = ref(false);
 const accountLoading = ref(false);
 
 async function handleAccountLogin() {
@@ -120,6 +139,7 @@ async function handleSmsLogin() {
 // ===== API Key 登录 =====
 const apiKeyInput = ref('');
 const apiKeyLoading = ref(false);
+const showApiKey = ref(false);
 
 async function handleApiKeyLogin() {
   const key = apiKeyInput.value.trim();
@@ -163,145 +183,222 @@ function onAuthed(result: LoginResult) {
 </script>
 
 <template>
-  <div class="flex h-full items-center justify-center overflow-y-auto bg-background p-4">
-    <div class="w-full max-w-[360px] rounded-lg border border-border bg-card p-5">
-      <div class="mb-4 flex items-center gap-2">
+  <div
+    class="flex h-full items-center justify-center overflow-y-auto px-4 py-6"
+    style="
+      background:
+        radial-gradient(1200px 400px at 50% -10%, rgba(59, 130, 246, 0.08), transparent),
+        var(--background);
+    "
+  >
+    <div
+      class="w-full max-w-[380px] rounded-2xl border border-border bg-card p-6 shadow-xl shadow-black/5"
+    >
+      <!-- 品牌区 -->
+      <div class="mb-5 flex flex-col items-center text-center">
         <div
-          class="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-[11px] font-medium text-primary-foreground"
+          class="mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-primary-foreground shadow-md"
+          style="background: linear-gradient(135deg, #3b82f6, #6366f1)"
         >
-          AI
+          <component :is="SparklesIcon" class="h-6 w-6" />
         </div>
-        <span class="text-[14px] font-medium">登录 AI 助手</span>
+        <div class="text-[16px] font-semibold">欢迎使用 AI 助手</div>
+        <div class="mt-1 text-[12px] text-muted-foreground">登录后开启智能对话之旅</div>
       </div>
 
-      <!-- 后端接口对接地址（登录前置项） -->
-      <div class="mb-3">
+      <!-- 登录方式：分段式切换 -->
+      <div class="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
         <button
+          v-for="t in tabs"
+          :key="t.key"
           type="button"
-          class="text-[12px] text-muted-foreground hover:text-foreground"
-          @click="showAdvanced = !showAdvanced"
+          class="rounded-md py-1.5 text-[12px] transition-all"
+          :class="
+            tab === t.key
+              ? 'bg-background font-medium text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="tab = t.key"
         >
-          后端接口地址 {{ showAdvanced ? '▲' : '▼' }}
-        </button>
-        <input
-          v-if="showAdvanced"
-          v-model="baseUrlInput"
-          type="text"
-          placeholder="如 /ai-api 或 http://host:8081"
-          class="mt-1.5 h-8 w-full rounded-md border border-border bg-background px-2 text-[12px] outline-none focus:border-primary"
-          data-testid="login-base-url"
-        />
-      </div>
-
-      <!-- 登录方式 Tab -->
-      <div class="mb-3 flex gap-4 border-b border-border text-[13px]">
-        <button
-          type="button"
-          class="pb-2"
-          :class="tab === 'account' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground'"
-          @click="tab = 'account'"
-        >
-          账号登录
-        </button>
-        <button
-          type="button"
-          class="pb-2"
-          :class="tab === 'sms' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground'"
-          @click="tab = 'sms'"
-        >
-          验证码登录
-        </button>
-        <button
-          type="button"
-          class="pb-2"
-          :class="tab === 'apikey' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground'"
-          @click="tab = 'apikey'"
-        >
-          API Key
+          {{ t.label }}
         </button>
       </div>
 
       <!-- 账号登录 -->
-      <form v-if="tab === 'account'" class="space-y-2.5" @submit.prevent="handleAccountLogin">
-        <input
-          v-model="username"
-          type="text"
-          placeholder="用户名"
-          class="h-9 w-full rounded-md border border-border bg-background px-2.5 text-[13px] outline-none focus:border-primary"
-        />
-        <input
-          v-model="password"
-          type="password"
-          placeholder="密码"
-          class="h-9 w-full rounded-md border border-border bg-background px-2.5 text-[13px] outline-none focus:border-primary"
-        />
+      <form v-if="tab === 'account'" class="space-y-3" @submit.prevent="handleAccountLogin">
+        <div>
+          <label class="mb-1 block text-[11px] text-muted-foreground">用户名</label>
+          <div class="relative">
+            <component
+              :is="UserIcon"
+              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              v-model="username"
+              type="text"
+              placeholder="请输入用户名"
+              class="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-[13px] outline-none transition-colors focus:border-primary"
+            />
+          </div>
+        </div>
+        <div>
+          <label class="mb-1 block text-[11px] text-muted-foreground">密码</label>
+          <div class="relative">
+            <component
+              :is="LockIcon"
+              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="请输入密码"
+              class="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-10 text-[13px] outline-none transition-colors focus:border-primary"
+            />
+            <button
+              type="button"
+              tabindex="-1"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              @click="showPassword = !showPassword"
+            >
+              <component :is="showPassword ? EyeOffIcon : EyeIcon" class="h-4 w-4" />
+            </button>
+          </div>
+        </div>
         <button
           type="submit"
           :disabled="accountLoading"
-          class="h-9 w-full rounded-md bg-primary text-[13px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          class="h-10 w-full rounded-lg bg-primary text-[13px] font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow disabled:opacity-50"
         >
           {{ accountLoading ? '登录中…' : '登 录' }}
         </button>
       </form>
 
       <!-- 验证码登录 -->
-      <form v-else-if="tab === 'sms'" class="space-y-2.5" @submit.prevent="handleSmsLogin">
-        <input
-          v-model="phone"
-          type="tel"
-          maxlength="11"
-          placeholder="手机号"
-          class="h-9 w-full rounded-md border border-border bg-background px-2.5 text-[13px] outline-none focus:border-primary"
-        />
-        <div class="flex gap-2">
-          <input
-            v-model="smsCode"
-            type="text"
-            maxlength="6"
-            placeholder="验证码"
-            class="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 text-[13px] outline-none focus:border-primary"
-          />
-          <button
-            type="button"
-            :disabled="smsSending || smsCountdown > 0 || !phoneValid"
-            class="h-9 flex-shrink-0 rounded-md border border-border px-3 text-[12px] hover:bg-accent disabled:opacity-50"
-            @click="handleSendSms"
-          >
-            {{ smsCountdown > 0 ? `${smsCountdown}s 后重发` : '发送验证码' }}
-          </button>
+      <form v-else-if="tab === 'sms'" class="space-y-3" @submit.prevent="handleSmsLogin">
+        <div>
+          <label class="mb-1 block text-[11px] text-muted-foreground">手机号</label>
+          <div class="relative">
+            <component
+              :is="SmartphoneIcon"
+              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              v-model="phone"
+              type="tel"
+              maxlength="11"
+              placeholder="请输入手机号"
+              class="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-[13px] outline-none transition-colors focus:border-primary"
+            />
+          </div>
+        </div>
+        <div>
+          <label class="mb-1 block text-[11px] text-muted-foreground">验证码</label>
+          <div class="flex gap-2">
+            <div class="relative min-w-0 flex-1">
+              <component
+                :is="ShieldCheckIcon"
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <input
+                v-model="smsCode"
+                type="text"
+                maxlength="6"
+                placeholder="短信验证码"
+                class="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-[13px] outline-none transition-colors focus:border-primary"
+              />
+            </div>
+            <button
+              type="button"
+              :disabled="smsSending || smsCountdown > 0 || !phoneValid"
+              class="h-10 flex-shrink-0 rounded-lg border border-border px-3 text-[12px] transition-colors hover:bg-accent disabled:opacity-50"
+              @click="handleSendSms"
+            >
+              {{ smsCountdown > 0 ? `${smsCountdown}s 后重发` : '获取验证码' }}
+            </button>
+          </div>
         </div>
         <button
           type="submit"
           :disabled="smsLoading"
-          class="h-9 w-full rounded-md bg-primary text-[13px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          class="h-10 w-full rounded-lg bg-primary text-[13px] font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow disabled:opacity-50"
         >
           {{ smsLoading ? '登录中…' : '登 录' }}
         </button>
       </form>
 
       <!-- API Key 登录 -->
-      <form v-else class="space-y-2.5" @submit.prevent="handleApiKeyLogin">
-        <input
-          v-model="apiKeyInput"
-          type="password"
-          placeholder="sk- 开头的 API Key"
-          class="h-9 w-full rounded-md border border-border bg-background px-2.5 text-[13px] outline-none focus:border-primary"
-        />
-        <p class="text-[11px] text-muted-foreground">
-          由门户控制台「API Key 管理」创建；此方式仅本浏览器生效，不含用户身份。
-        </p>
+      <form v-else class="space-y-3" @submit.prevent="handleApiKeyLogin">
+        <div>
+          <label class="mb-1 block text-[11px] text-muted-foreground">API Key</label>
+          <div class="relative">
+            <component
+              :is="KeyRoundIcon"
+              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              v-model="apiKeyInput"
+              :type="showApiKey ? 'text' : 'password'"
+              placeholder="sk- 开头的 API Key"
+              class="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-10 text-[13px] outline-none transition-colors focus:border-primary"
+            />
+            <button
+              type="button"
+              tabindex="-1"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              @click="showApiKey = !showApiKey"
+            >
+              <component :is="showApiKey ? EyeOffIcon : EyeIcon" class="h-4 w-4" />
+            </button>
+          </div>
+          <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            由门户控制台「API Key 管理」创建；此方式仅本浏览器生效，不含用户身份。
+          </p>
+        </div>
         <button
           type="submit"
           :disabled="apiKeyLoading"
-          class="h-9 w-full rounded-md bg-primary text-[13px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          class="h-10 w-full rounded-lg bg-primary text-[13px] font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow disabled:opacity-50"
         >
           {{ apiKeyLoading ? '校验中…' : '验证并进入' }}
         </button>
       </form>
 
-      <p class="mt-4 text-center text-[11px] text-muted-foreground">
-        微信扫码登录请前往门户控制台
-      </p>
+      <!-- 高级选项：后端接口地址 -->
+      <div class="mt-5">
+        <button
+          type="button"
+          class="flex w-full items-center gap-3 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          @click="showAdvanced = !showAdvanced"
+        >
+          <span class="h-px flex-1 bg-border"></span>
+          <span class="flex items-center gap-1">
+            <component :is="ServerIcon" class="h-3 w-3" />
+            高级选项
+            <component
+              :is="ChevronDownIcon"
+              class="h-3 w-3 transition-transform"
+              :class="showAdvanced ? 'rotate-180' : ''"
+            />
+          </span>
+          <span class="h-px flex-1 bg-border"></span>
+        </button>
+        <div v-if="showAdvanced" class="mt-3">
+          <label class="mb-1 block text-[11px] text-muted-foreground">后端接口地址</label>
+          <input
+            v-model="baseUrlInput"
+            type="text"
+            placeholder="如 /ai-api 或 http://host:8081"
+            class="h-9 w-full rounded-lg border border-border bg-background px-3 text-[12px] outline-none transition-colors focus:border-primary"
+            data-testid="login-base-url"
+          />
+        </div>
+      </div>
+
+      <!-- 底部引导 -->
+      <div class="mt-4 text-center text-[11px] text-muted-foreground">
+        微信扫码登录请前往
+        <span class="text-foreground/80">门户控制台</span>
+      </div>
     </div>
   </div>
 </template>
