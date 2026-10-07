@@ -44,6 +44,21 @@ export function clearUserAuth(): void {
   localStorage.removeItem(USER_AUTH_KEY);
 }
 
+/**
+ * 退出组件内置登录（tasks-2610-0212-46 后续增强）：
+ * 清用户 JWT + 用户自存 API Key，并广播凭据变化（登录门控重新出现）。
+ * 宿主注入的凭据（config.auth / syncParams 内存 Key）不在此列——那是宿主的职责。
+ */
+export function logoutComponentUser(): void {
+  clearUserAuth();
+  try {
+    void import('./client').then(({ resetAiApiKey }) => resetAiApiKey());
+  } catch {
+    // client 未就绪：仅清用户态
+  }
+  notifyCredentialsChanged();
+}
+
 /** 通知宿主/组件内部凭据状态变化（登录/登出后刷新门控） */
 export function notifyCredentialsChanged(): void {
   if (typeof window !== 'undefined') {

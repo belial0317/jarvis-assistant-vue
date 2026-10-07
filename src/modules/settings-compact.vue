@@ -4,6 +4,7 @@ import { message } from 'ant-design-vue';
 
 import { computed, inject, onMounted, reactive, ref } from 'vue';
 import { fetchWhoami } from '../api/whoami';
+import { getUserAuth, logoutComponentUser } from '../api/auth';
 import {
   SDK_UPDATE_KEY,
   getSdkChannel,
@@ -194,6 +195,20 @@ const savedApiKeyMasked = ref('');
 /** 宿主/门户是否已统一下发凭据（下发后无需用户配置） */
 const hostKeyApplied = ref(false);
 
+// ===== 退出组件登录（tasks-2610-0212-46 后续增强）：清用户 JWT + 本地 Key → 登录门控重新出现 =====
+const componentUserLoggedIn = ref(false);
+
+async function refreshComponentUserState(): Promise<void> {
+  componentUserLoggedIn.value = getUserAuth() != null;
+}
+
+async function handleLogout(): Promise<void> {
+  logoutComponentUser();
+  message.success('已退出 AI 助手登录');
+  // 整页刷新最干净：聊天会话状态/凭据探针全部重置，登录卡片重新出现
+  window.location.reload();
+}
+
 function loadApiKey() {
   savedApiKeyMasked.value = maskApiKeyForDisplay();
   apiKeyInput.value = '';
@@ -295,6 +310,7 @@ async function testBackendConnection() {
 onMounted(() => {
   void loadNl2sqlUrl();
   void loadWhoami();
+  void refreshComponentUserState();
   loadBackendUrl();
   void loadModelOptions();
 });
@@ -319,6 +335,13 @@ onMounted(() => {
         v-if="whoami.role === 'admin'"
         class="rounded bg-primary/10 px-1.5 py-0.5 text-primary"
       >管理员</span>
+      <!-- 退出组件内置登录（tasks-2610-0212-46 后续增强）：清用户 JWT 与本地 Key，回到登录卡片 -->
+      <button
+        type="button"
+        class="ml-auto rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+        data-testid="assistant-logout"
+        @click="handleLogout"
+      >退出登录</button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto p-3">
