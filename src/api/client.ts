@@ -8,23 +8,40 @@ import { useAiAssistantConfig } from '../providers';
 const AI_BASE_URL_STORAGE_KEY = 'ai_assistant_base_url';
 const DEFAULT_AI_BASE_URL = '/ai-api';
 
+/** 归一化后端地址：绝对地址缺 /ai-api 前缀时自动补充（门户/电商统一走该前缀） */
+export function normalizeAiBaseUrl(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed) && !trimmed.endsWith('/ai-api')) {
+    return `${trimmed}/ai-api`;
+  }
+  return trimmed;
+}
+
 /** 读取当前 AI 后端服务地址（未配置则返回默认 `/ai-api`） */
 export function getAiBaseUrl(): string {
-  return (
-    (typeof localStorage !== 'undefined' &&
-      localStorage.getItem(AI_BASE_URL_STORAGE_KEY)) ||
-    DEFAULT_AI_BASE_URL
-  );
+  const stored =
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem(AI_BASE_URL_STORAGE_KEY)
+      : null;
+  if (stored) {
+    const normalized = normalizeAiBaseUrl(stored);
+    if (normalized !== stored) {
+      localStorage.setItem(AI_BASE_URL_STORAGE_KEY, normalized);
+    }
+    return normalized;
+  }
+  return DEFAULT_AI_BASE_URL;
 }
 
 /** 设置 AI 后端服务地址（空字符串视为恢复默认） */
 export function setAiBaseUrl(url: string): void {
   if (typeof localStorage === 'undefined') return;
-  const trimmed = url.trim();
-  if (!trimmed || trimmed === DEFAULT_AI_BASE_URL) {
+  const normalized = normalizeAiBaseUrl(url);
+  if (!normalized || normalized === DEFAULT_AI_BASE_URL) {
     localStorage.removeItem(AI_BASE_URL_STORAGE_KEY);
   } else {
-    localStorage.setItem(AI_BASE_URL_STORAGE_KEY, trimmed);
+    localStorage.setItem(AI_BASE_URL_STORAGE_KEY, normalized);
   }
 }
 

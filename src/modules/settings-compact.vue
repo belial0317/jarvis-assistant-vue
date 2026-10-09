@@ -18,6 +18,7 @@ import {
   getAiBaseUrl,
   getHostAiApiKey,
   maskAiApiKey,
+  normalizeAiBaseUrl,
   resetAiApiKey,
   resetAiBaseUrl,
   setAiApiKey,
@@ -263,10 +264,14 @@ function handleClearApiKey() {
  * 4. 触发全局事件，让 ai-assistant-content 的横幅自动刷新
  */
 async function saveBackendUrl() {
-  const url = backendUrlInput.value.trim();
+  const raw = backendUrlInput.value.trim();
+  const url = normalizeAiBaseUrl(raw);
   setAiBaseUrl(url);
   backendUrlInput.value = getAiBaseUrl();
   syncToServer('ai_assistant_base_url', url && url !== DEFAULT_BASE_URL ? url : '');
+  if (url !== raw) {
+    message.info('已自动补充 /ai-api 前缀');
+  }
   message.success(
     url && url !== DEFAULT_BASE_URL
       ? `后端服务地址已切换为：${url}`
@@ -394,7 +399,7 @@ onMounted(() => {
                   v-model="backendUrlInput"
                   type="text"
                   class="h-7 flex-1 rounded-md border border-border bg-transparent px-2 text-[12px] outline-none focus:border-primary/50"
-                  placeholder="/ai-api 或 http://192.168.1.100:8080"
+                  placeholder="/ai-api 或 https://jarvis.speedproject.cn/ai-api"
                 />
                 <button
                   class="h-7 flex-shrink-0 rounded-md bg-primary px-2.5 text-[11px] text-primary-foreground hover:bg-primary/90"
