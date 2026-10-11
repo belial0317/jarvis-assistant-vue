@@ -16,7 +16,7 @@
 import type { ChatMessage } from '../types';
 import type { HostBusinessContext } from '../providers/config';
 
-import { aiRequestClient, fetchBlob, fetchBlobWithMeta } from './client';
+import { aiRequestClient, fetchBlob, fetchBlobWithMeta, getAiApiKey, getHostAiApiKey } from './client';
 import { ChatApi, path } from './endpoints';
 
 /** 后端返回的 ChatSessionVO（不含 messages） */
@@ -441,6 +441,13 @@ export interface ModelCatalog {
   defaultModel?: CatalogModelItem | null;
 }
 
+/**
+ * 模型目录（/api-token/providers）只认 sk- 业务 Key（ROLE_API_TOKEN）：
+ * 登录用户 JWT 走数据面会话隔离后，目录仍须显式携带业务 Key，否则 403。
+ */
 export function fetchModelCatalog() {
-  return aiRequestClient.get<ModelCatalog>('/api-token/providers');
+  const apiKey = getHostAiApiKey() ?? getAiApiKey();
+  return aiRequestClient.get<ModelCatalog>('/api-token/providers', {
+    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+  });
 }

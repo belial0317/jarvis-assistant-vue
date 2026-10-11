@@ -143,19 +143,20 @@ function resolveBaseURL(): string {
 function buildHeaders(custom?: Record<string, string>): Record<string, string> {
   const aiConfig = useAiAssistantConfig();
   const headers: Record<string, string> = { ...custom };
-  // 鉴权链：宿主注入 config.auth 优先；其次宿主 syncParams 下发的内存 Key；
-  // 再次业务 API Key（含组件登录后自动绑定的 Key）；最后才是用户 JWT。
-  // 数据面接口（chat/mcp/knowledge…）只认 sk- 业务 Key，用户 JWT 仅用于
-  // /auth/profile/settings、/api-tokens 等管理面（那些调用显式传 JWT，不走本链）。
+  // 鉴权链（2026-10-11 会话隔离）：登录用户 JWT 优先（数据面会话按 user_id 隔离）；
+  // 未登录回落宿主注入/下发的业务 API Key（匿名演示空间）；最后才是组件本地 Key/JWT。
+  // 服务端两通道均支持：JwtAuthenticationFilter 接受用户 JWT，ApiKeyAuthFilter 接受 sk- Key。
   // 必须多通道：异步回调（点击 / await 之后）里 inject 拿到的是宿主全局兜底配置，
   // 该配置往往没有 auth——此时宿主下发 Key / 设置页本地 Key 是唯一凭证。
   const token =
+    aiConfig.auth?.getUserToken?.() ??
     aiConfig.auth?.getToken?.() ??
     getHostAiApiKey() ??
     getAiApiKey() ??
     getUserJwt();
   const authHeader = formatToken(token);
-  if (authHeader) {
+  if (authHeader && !headers.Authorization) {
+    // 调用方显式传入的 Authorization（如目录端点强制业务 Key）优先，不被默认链覆盖
     headers.Authorization = authHeader;
   }
   headers['Accept-Language'] = aiConfig.locale?.getLocale() ?? 'zh-CN';
