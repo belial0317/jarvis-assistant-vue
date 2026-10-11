@@ -90,6 +90,13 @@ export interface AiAssistantConfig {
   };
 
   /**
+   * 会话历史可见性（2026-10-11 会话隔离）：false 时不加载/展示历史会话列表，
+   * 每次进入直接开新会话（匿名访客体验场景，防止看到其他用户会话）。
+   * @default true
+   */
+  sessionHistoryVisible?: boolean;
+
+  /**
    * 主内容区 DOM 选择器，页面感知提取用。
    * @default '#__vben_main_content'
    */

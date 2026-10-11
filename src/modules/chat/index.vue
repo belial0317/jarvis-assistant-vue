@@ -108,6 +108,8 @@ const activeSession = computed(
 
 const showHistory = ref(false);
 const loadingSessions = ref(false);
+/** 会话历史可见性（宿主配置；匿名访客场景为 false，不加载/展示历史） */
+const sessionHistoryVisible = config.sessionHistoryVisible ?? true;
 
 // ===== T15：会话列表（搜索 / 置顶 / 重命名 / 分组 / 时间戳） =====
 const sessionKeyword = ref('');
@@ -1348,12 +1350,13 @@ onMounted(async () => {
     return;
   }
   // 并行加载模型选项 + Agent 列表 + 会话列表（感知配置已先行加载）
+  // 会话历史不可见（匿名访客）时跳过历史加载，直接开新会话
   await Promise.all([
     loadModelOptions(),
     loadAgents(),
-    loadSessions(),
+    sessionHistoryVisible ? loadSessions() : Promise.resolve(),
   ]);
-  if (sessions.value.length === 0) {
+  if (!sessionHistoryVisible || sessions.value.length === 0) {
     await startNewSession();
   } else {
     scrollToBottom();
@@ -1375,7 +1378,7 @@ onUnmounted(() => {
     <!-- 会话历史侧栏 -->
     <transition name="slide-fade">
       <aside
-        v-if="showHistory"
+        v-if="showHistory && sessionHistoryVisible"
         class="flex w-[200px] flex-shrink-0 flex-col border-r border-border bg-background-deep"
       >
         <div class="flex items-center justify-between px-3 py-2.5">
@@ -1565,6 +1568,7 @@ onUnmounted(() => {
           <component :is="ListIcon" class="h-4 w-4" />
         </button>
         <button
+          v-if="sessionHistoryVisible"
           class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           :class="showHistory ? 'bg-accent text-foreground' : ''"
           aria-label="会话历史"
