@@ -844,9 +844,8 @@ async function copyContent() {
           👎
         </button>
         <button
-          v-if="message.traceId"
           class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent hover:text-foreground"
-          title="查看智能体路径（执行诊断）"
+          title="查看智能体路径（执行诊断；旧消息无记录时显示缺失提示）"
           @click="$emit('openTrace', { messageId: message.id })"
         >
           智能体路径
