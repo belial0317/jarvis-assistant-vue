@@ -370,7 +370,7 @@ function onAuthed(result: LoginResult) {
           class="flex w-full items-center gap-3 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
           @click="showAdvanced = !showAdvanced"
         >
-          <span class="h-px flex-1 bg-border"></span>
+          <span class="h-px flex-1 bg-border" />
           <span class="flex items-center gap-1">
             <component :is="ServerIcon" class="h-3 w-3" />
             高级选项
@@ -380,7 +380,7 @@ function onAuthed(result: LoginResult) {
               :class="showAdvanced ? 'rotate-180' : ''"
             />
           </span>
-          <span class="h-px flex-1 bg-border"></span>
+          <span class="h-px flex-1 bg-border" />
         </button>
         <div v-if="showAdvanced" class="mt-3">
           <label class="mb-1 block text-[11px] text-muted-foreground">后端接口地址</label>
