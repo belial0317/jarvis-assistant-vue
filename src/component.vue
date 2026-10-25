@@ -8,7 +8,7 @@ import {
 } from './providers/host-context';
 import { Drawer as ADrawer, Tooltip as ATooltip } from 'ant-design-vue';
 
-import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue';
 
 import AiAssistantContent from './content.vue';
 import { t } from './i18n';
@@ -65,22 +65,32 @@ const props = withDefaults(
   { rootClassName: '', theme: 'auto' },
 );
 
-// 解析有效配置：优先使用 prop 传入的配置，否则使用全局注入的配置
-let resolvedConfig: AiAssistantConfig;
-if (props.config) {
-  resolvedConfig = props.config;
-} else {
+// 解析有效配置：优先使用 prop 传入的配置，否则使用全局注入的配置。
+// 2026-10-12 修复：改为响应式（shallowRef + watch props.config）——原实现 setup 时
+// 一次性捕获，宿主更新 :config（如登录态切换）后组件仍沿用旧配置，导致
+// 会话历史可见性 / 鉴权链滞后（线上缺陷：登录后发送仍携带访客 Key）。
+function resolveInitialConfig(): AiAssistantConfig {
+  if (props.config) {
+    return props.config;
+  }
   try {
-    resolvedConfig = useAiAssistantConfig();
+    return useAiAssistantConfig();
   } catch {
-    resolvedConfig = {} as AiAssistantConfig;
+    return {} as AiAssistantConfig;
   }
 }
+const resolvedConfig = shallowRef<AiAssistantConfig>(resolveInitialConfig());
+watch(
+  () => props.config,
+  (c) => {
+    if (c) resolvedConfig.value = c;
+  },
+);
 provide(AI_ASSISTANT_CONFIG_KEY, resolvedConfig);
 
 // T18：i18n 语言同步（宿主 locale.getLocale() 变化时切换字典；须在 resolvedConfig 声明后）
 watch(
-  () => resolvedConfig.locale?.getLocale?.(),
+  () => resolvedConfig.value.locale?.getLocale?.(),
   (l) => {
     if (l) {
       const code = l.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
@@ -115,7 +125,7 @@ const authProbeTick = ref(0);
 const needsLogin = computed(() => {
   void authProbeTick.value;
   try {
-    if (resolvedConfig.auth?.getToken) return false;
+    if (resolvedConfig.value.auth?.getToken) return false;
   } catch {
     // config 未就绪：继续检查其余通道
   }
@@ -245,7 +255,7 @@ onMounted(() => {
   // 此时 syncParams（watch immediate）已应用，宿主下发项不会被用户设置覆盖。
   // 无身份/失败静默回落 localStorage 现状。
   void pullUserSettings();
-  pagePerception.start(resolvedConfig.route, resolvedConfig.mainContentSelector);
+  pagePerception.start(resolvedConfig.value.route, resolvedConfig.value.mainContentSelector);
   // T16：窄屏视口监听（<768px 全屏宽度）
   const onResize = () => {
     isNarrow.value = window.innerWidth < 768;
@@ -254,7 +264,7 @@ onMounted(() => {
   onBeforeUnmount(() => window.removeEventListener('resize', onResize));
   // S6 修复:start 只挂监听(内核首采由路由变化/变异驱动),
   // 挂载后显式触发一次当前路由的首采,否则快照与度量埋点要等首次交互
-  const routeProvider = resolvedConfig.route;
+  const routeProvider = resolvedConfig.value.route;
   if (routeProvider) {
     const firstPath = routeProvider.getRoute().path ?? '/';
     pagePerception.handleRouteChange(firstPath);

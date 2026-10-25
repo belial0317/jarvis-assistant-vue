@@ -7,14 +7,15 @@
  * 同时维护全局引用，使 API 层等非组件上下文也能获取配置。
  */
 
-import type { App, InjectionKey, Plugin } from 'vue';
+import type { App, InjectionKey, Plugin, Ref } from 'vue';
 
-import { getCurrentInstance, inject } from 'vue';
+import { getCurrentInstance, inject, isRef } from 'vue';
 
 import type { AiAssistantConfig } from './config';
 
-export const AI_ASSISTANT_CONFIG_KEY: InjectionKey<AiAssistantConfig> =
-  Symbol('ai-assistant-config');
+export const AI_ASSISTANT_CONFIG_KEY: InjectionKey<
+  AiAssistantConfig | Ref<AiAssistantConfig>
+> = Symbol('ai-assistant-config');
 
 /**
  * 全局配置引用（支持在非组件上下文中使用，如 API 层）。
@@ -57,7 +58,11 @@ export function useAiAssistantConfig(): AiAssistantConfig {
   if (getCurrentInstance()) {
     try {
       const config = inject(AI_ASSISTANT_CONFIG_KEY);
-      if (config) return config;
+      if (config) {
+        // component.vue 提供的是响应式 Ref（props.config 变化实时更新）；
+        // 此处解包返回当前值，调用方每次读取即拿到最新配置
+        return isRef(config) ? config.value : config;
+      }
     } catch {
       /* inject() outside setup - fall through to globalConfig */
     }

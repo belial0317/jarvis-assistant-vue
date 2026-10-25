@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { createIconifyIcon } from '../../providers/icons';
 
-import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, inject, isRef, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue';
 
 import type {
   ChatMessage,
@@ -48,7 +48,11 @@ import { pagePerception, type PerceptionStage } from '../../perception/manager';
 import { trackMetric } from '../../perception/metrics';
 import StatusBar from '../../components/status-bar.vue';
 import InputArea from './input-area.vue';
-import { useAiAssistantConfig } from '../../providers';
+import {
+  AI_ASSISTANT_CONFIG_KEY,
+  useAiAssistantConfig,
+  type AiAssistantConfig,
+} from '../../providers';
 import { AI_ASSISTANT_HOST_CONTEXT_KEY } from '../../providers/host-context';
 
 defineOptions({ name: 'AiChatWorkbench' });
@@ -109,8 +113,21 @@ const activeSession = computed(
 
 const showHistory = ref(false);
 const loadingSessions = ref(false);
-/** 会话历史可见性（宿主配置；匿名访客场景为 false，不加载/展示历史） */
-const sessionHistoryVisible = config.sessionHistoryVisible ?? true;
+/**
+ * 会话历史可见性（宿主配置；匿名访客场景为 false，不加载/展示历史）。
+ * 2026-10-12：改为响应式——component.vue 提供的是 Ref（props.config 变化实时更新），
+ * 登录态切换后无需刷新页面即生效；非 Ref（全局兜底）包一层 shallowRef 兼容。
+ */
+const injectedCfg = inject(AI_ASSISTANT_CONFIG_KEY, null) as
+  | AiAssistantConfig
+  | import('vue').Ref<AiAssistantConfig>
+  | null;
+const liveCfg = isRef(injectedCfg)
+  ? injectedCfg
+  : shallowRef((injectedCfg ?? {}) as AiAssistantConfig);
+const sessionHistoryVisible = computed(
+  () => liveCfg.value.sessionHistoryVisible ?? true,
+);
 
 // ===== T15：会话列表（搜索 / 置顶 / 重命名 / 分组 / 时间戳） =====
 const sessionKeyword = ref('');
@@ -653,6 +670,22 @@ async function loadSessions() {
     loadingSessions.value = false;
   }
 }
+
+/**
+ * 登录态切换（匿名→登录）：历史可见性由 false 变 true 时加载会话列表。
+ * 原实现仅在挂载时加载；不刷新页面直接登录的场景依赖此 watch 补齐。
+ * 仅覆盖「变可见且尚未加载」一个场景，不重复加载、不干预其他状态。
+ */
+watch(sessionHistoryVisible, (visible) => {
+  if (
+    visible &&
+    !loadingSessions.value &&
+    sessions.value.length === 0 &&
+    health.value.state !== 'disconnected'
+  ) {
+    void loadSessions();
+  }
+});
 
 /** 加载某会话的消息列表 */
 async function loadMessages(sessionId: string) {
@@ -1368,9 +1401,9 @@ onMounted(async () => {
   await Promise.all([
     loadModelOptions(),
     loadAgents(),
-    sessionHistoryVisible ? loadSessions() : Promise.resolve(),
+    sessionHistoryVisible.value ? loadSessions() : Promise.resolve(),
   ]);
-  if (!sessionHistoryVisible || sessions.value.length === 0) {
+  if (!sessionHistoryVisible.value || sessions.value.length === 0) {
     await startNewSession();
   } else {
     scrollToBottom();
